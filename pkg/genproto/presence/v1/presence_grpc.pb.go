@@ -7,10 +7,7 @@
 package presencev1
 
 import (
-	context "context"
 	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -18,29 +15,36 @@ import (
 // Requires gRPC-Go v1.64.0 or later.
 const _ = grpc.SupportPackageIsVersion9
 
-const (
-	PresenceService_GetAvailableAgents_FullMethodName = "/presence.v1.PresenceService/GetAvailableAgents"
-)
-
 // PresenceServiceClient is the client API for PresenceService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // PresenceService is owned by the Agent & Presence service (architecture doc
-// Section 2.2) and is the synchronous gRPC contract Task Router uses to ask
-// "who is available right now" (Section 3.2 IPC summary table).
+// Section 2.2). Its actual scope (per the milestone that implemented the
+// live WebSocket connection registry) is: hold the live WebSocket
+// connection to every logged-in Agent Desktop, relay a filtered subset of
+// Task Router's domain events to the agent each connection belongs to, and
+// nothing else -- it does NOT duplicate Task Router's Agent entity
+// (status, capacity, queues), and Task Router never calls into this
+// service synchronously (Task Router already owns all agent routing state
+// it needs internally).
 //
-// NOTE: tenant_id is deliberately NOT a field on any message here. Per
-// architecture doc Section 1.1, tenant scoping travels as gRPC metadata
-// (`x-tenant-id`), injected/validated by the pkg/tenantctx interceptor on
-// both the client and server side — never as an in-message field.
+// The service definition below is intentionally left empty. It is kept
+// (rather than deleting the file / package) so the package structure,
+// generated Go package, and buf module entry stay stable for a future
+// RPC -- e.g. an internal "IsAgentConnected(agentId) -> bool" query
+// another service might want -- without a breaking rename. Nothing in the
+// current milestone's scope needs a synchronous RPC into this service: the
+// only client-facing surface is the WebSocket upgrade endpoint (see
+// services/agent-presence/README.md), which is plain HTTP, not gRPC. The
+// gRPC server this service still runs is registered for the standard
+// health check only (see pkg/health).
+//
+// The previously-defined GetAvailableAgents RPC (and its Request/Response/
+// Agent messages) has been removed: Task Router never called it, and it
+// duplicated state that Task Router already owns as the sole source of
+// truth for agent routing eligibility.
 type PresenceServiceClient interface {
-	// GetAvailableAgents returns the agents currently eligible to receive a
-	// task of the given type from the given queue. This is a contract
-	// skeleton only — the full eligibility/matching semantics live in the
-	// Task Router domain (see TASK_ROUTER_SPECIFICATION.md) and are not
-	// implemented by this scaffold.
-	GetAvailableAgents(ctx context.Context, in *GetAvailableAgentsRequest, opts ...grpc.CallOption) (*GetAvailableAgentsResponse, error)
 }
 
 type presenceServiceClient struct {
@@ -51,35 +55,36 @@ func NewPresenceServiceClient(cc grpc.ClientConnInterface) PresenceServiceClient
 	return &presenceServiceClient{cc}
 }
 
-func (c *presenceServiceClient) GetAvailableAgents(ctx context.Context, in *GetAvailableAgentsRequest, opts ...grpc.CallOption) (*GetAvailableAgentsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetAvailableAgentsResponse)
-	err := c.cc.Invoke(ctx, PresenceService_GetAvailableAgents_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // PresenceServiceServer is the server API for PresenceService service.
 // All implementations must embed UnimplementedPresenceServiceServer
 // for forward compatibility.
 //
 // PresenceService is owned by the Agent & Presence service (architecture doc
-// Section 2.2) and is the synchronous gRPC contract Task Router uses to ask
-// "who is available right now" (Section 3.2 IPC summary table).
+// Section 2.2). Its actual scope (per the milestone that implemented the
+// live WebSocket connection registry) is: hold the live WebSocket
+// connection to every logged-in Agent Desktop, relay a filtered subset of
+// Task Router's domain events to the agent each connection belongs to, and
+// nothing else -- it does NOT duplicate Task Router's Agent entity
+// (status, capacity, queues), and Task Router never calls into this
+// service synchronously (Task Router already owns all agent routing state
+// it needs internally).
 //
-// NOTE: tenant_id is deliberately NOT a field on any message here. Per
-// architecture doc Section 1.1, tenant scoping travels as gRPC metadata
-// (`x-tenant-id`), injected/validated by the pkg/tenantctx interceptor on
-// both the client and server side — never as an in-message field.
+// The service definition below is intentionally left empty. It is kept
+// (rather than deleting the file / package) so the package structure,
+// generated Go package, and buf module entry stay stable for a future
+// RPC -- e.g. an internal "IsAgentConnected(agentId) -> bool" query
+// another service might want -- without a breaking rename. Nothing in the
+// current milestone's scope needs a synchronous RPC into this service: the
+// only client-facing surface is the WebSocket upgrade endpoint (see
+// services/agent-presence/README.md), which is plain HTTP, not gRPC. The
+// gRPC server this service still runs is registered for the standard
+// health check only (see pkg/health).
+//
+// The previously-defined GetAvailableAgents RPC (and its Request/Response/
+// Agent messages) has been removed: Task Router never called it, and it
+// duplicated state that Task Router already owns as the sole source of
+// truth for agent routing eligibility.
 type PresenceServiceServer interface {
-	// GetAvailableAgents returns the agents currently eligible to receive a
-	// task of the given type from the given queue. This is a contract
-	// skeleton only — the full eligibility/matching semantics live in the
-	// Task Router domain (see TASK_ROUTER_SPECIFICATION.md) and are not
-	// implemented by this scaffold.
-	GetAvailableAgents(context.Context, *GetAvailableAgentsRequest) (*GetAvailableAgentsResponse, error)
 	mustEmbedUnimplementedPresenceServiceServer()
 }
 
@@ -90,9 +95,6 @@ type PresenceServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedPresenceServiceServer struct{}
 
-func (UnimplementedPresenceServiceServer) GetAvailableAgents(context.Context, *GetAvailableAgentsRequest) (*GetAvailableAgentsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetAvailableAgents not implemented")
-}
 func (UnimplementedPresenceServiceServer) mustEmbedUnimplementedPresenceServiceServer() {}
 func (UnimplementedPresenceServiceServer) testEmbeddedByValue()                         {}
 
@@ -114,36 +116,13 @@ func RegisterPresenceServiceServer(s grpc.ServiceRegistrar, srv PresenceServiceS
 	s.RegisterService(&PresenceService_ServiceDesc, srv)
 }
 
-func _PresenceService_GetAvailableAgents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetAvailableAgentsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(PresenceServiceServer).GetAvailableAgents(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: PresenceService_GetAvailableAgents_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(PresenceServiceServer).GetAvailableAgents(ctx, req.(*GetAvailableAgentsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // PresenceService_ServiceDesc is the grpc.ServiceDesc for PresenceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var PresenceService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "presence.v1.PresenceService",
 	HandlerType: (*PresenceServiceServer)(nil),
-	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "GetAvailableAgents",
-			Handler:    _PresenceService_GetAvailableAgents_Handler,
-		},
-	},
-	Streams:  []grpc.StreamDesc{},
-	Metadata: "presence/v1/presence.proto",
+	Methods:     []grpc.MethodDesc{},
+	Streams:     []grpc.StreamDesc{},
+	Metadata:    "presence/v1/presence.proto",
 }

@@ -5,33 +5,28 @@ package presence.v1;
 option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/presence/v1;presencev1";
 
 // PresenceService is owned by the Agent & Presence service (architecture doc
-// Section 2.2) and is the synchronous gRPC contract Task Router uses to ask
-// "who is available right now" (Section 3.2 IPC summary table).
+// Section 2.2). Its actual scope (per the milestone that implemented the
+// live WebSocket connection registry) is: hold the live WebSocket
+// connection to every logged-in Agent Desktop, relay a filtered subset of
+// Task Router's domain events to the agent each connection belongs to, and
+// nothing else -- it does NOT duplicate Task Router's Agent entity
+// (status, capacity, queues), and Task Router never calls into this
+// service synchronously (Task Router already owns all agent routing state
+// it needs internally).
 //
-// NOTE: tenant_id is deliberately NOT a field on any message here. Per
-// architecture doc Section 1.1, tenant scoping travels as gRPC metadata
-// (`x-tenant-id`), injected/validated by the pkg/tenantctx interceptor on
-// both the client and server side — never as an in-message field.
-service PresenceService {
-  // GetAvailableAgents returns the agents currently eligible to receive a
-  // task of the given type from the given queue. This is a contract
-  // skeleton only — the full eligibility/matching semantics live in the
-  // Task Router domain (see TASK_ROUTER_SPECIFICATION.md) and are not
-  // implemented by this scaffold.
-  rpc GetAvailableAgents(GetAvailableAgentsRequest) returns (GetAvailableAgentsResponse);
-}
-
-message GetAvailableAgentsRequest {
-  string queue_id = 1;
-  string task_type = 2;
-}
-
-message GetAvailableAgentsResponse {
-  repeated Agent agents = 1;
-}
-
-message Agent {
-  string agent_id = 1;
-  string status = 2;
-  repeated string queues = 3;
-}
+// The service definition below is intentionally left empty. It is kept
+// (rather than deleting the file / package) so the package structure,
+// generated Go package, and buf module entry stay stable for a future
+// RPC -- e.g. an internal "IsAgentConnected(agentId) -> bool" query
+// another service might want -- without a breaking rename. Nothing in the
+// current milestone's scope needs a synchronous RPC into this service: the
+// only client-facing surface is the WebSocket upgrade endpoint (see
+// services/agent-presence/README.md), which is plain HTTP, not gRPC. The
+// gRPC server this service still runs is registered for the standard
+// health check only (see pkg/health).
+//
+// The previously-defined GetAvailableAgents RPC (and its Request/Response/
+// Agent messages) has been removed: Task Router never called it, and it
+// duplicated state that Task Router already owns as the sole source of
+// truth for agent routing eligibility.
+service PresenceService {}

@@ -12,3 +12,6 @@ spec:
     - name: grpc
       port: 50055
       targetPort: 50055
+    - name: ws
+      port: 8085
+      targetPort: 8085

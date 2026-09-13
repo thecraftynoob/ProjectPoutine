@@ -15,6 +15,7 @@ package eventbus
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nats-io/nats.go"
@@ -99,6 +100,16 @@ func (c *Client) PublishEvent(ctx context.Context, tenantID uuid.UUID, domain, e
 // delivered to exactly one of them) — this is how the matching engine /
 // worker pool style horizontal scaling described in the architecture doc
 // is achieved.
+//
+// Because consumerName is shared cluster-wide on the stream, Subscribe is
+// the right choice when every process sharing consumerName is meant to
+// split the stream's messages between them (competing consumers). It is
+// the WRONG choice when every process instead needs its own independent
+// full copy of the stream (e.g. one per replica of a stateless-fanout
+// service) — a deterministic, process-shared consumerName there would
+// silently collapse every replica into one competing-consumer group, so
+// only one replica would ever see a given message. Use
+// SubscribeEphemeral for that case instead.
 func (c *Client) Subscribe(ctx context.Context, streamName, consumerName, subjectFilter string, handler func(msg jetstream.Msg) error) error {
 	cons, err := c.js.CreateOrUpdateConsumer(ctx, streamName, jetstream.ConsumerConfig{
 		Durable:       consumerName,
@@ -109,6 +120,49 @@ func (c *Client) Subscribe(ctx context.Context, streamName, consumerName, subjec
 		return fmt.Errorf("eventbus: create consumer %q on stream %q: %w", consumerName, streamName, err)
 	}
 
+	return c.consume(ctx, cons, consumerName, handler)
+}
+
+// SubscribeEphemeral creates a brand-new, unnamed (ephemeral) JetStream
+// pull consumer on stream streamName, filtered to subjectFilter, and runs
+// handler for every delivered message until ctx is cancelled. Unlike
+// Subscribe, every call to SubscribeEphemeral — even with identical
+// arguments, even from the same process — gets its own independent
+// consumer and therefore its own full copy of every matching message.
+// This is the correct primitive for a set of stateless replicas that each
+// need to independently observe every event on a stream (as opposed to
+// splitting the stream's messages between themselves): each replica calls
+// SubscribeEphemeral once at startup and none of them compete with each
+// other or with any other replica.
+//
+// The consumer has no Durable name, so JetStream auto-generates one and
+// does not persist it as a named, reusable entity: combined with a
+// non-zero inactiveThreshold, the server automatically deletes the
+// consumer once nothing has pulled from it for that long (e.g. after this
+// process exits or crashes), so no explicit cleanup call is required and
+// no consumer accumulates unboundedly across restarts. This matches the
+// "no replay needed" philosophy a reconnecting/restarting replica should
+// have: it does not need to resume from its own prior incarnation's
+// position, only to receive events from roughly now onward.
+func (c *Client) SubscribeEphemeral(ctx context.Context, streamName, subjectFilter string, inactiveThreshold time.Duration, handler func(msg jetstream.Msg) error) error {
+	cons, err := c.js.CreateConsumer(ctx, streamName, jetstream.ConsumerConfig{
+		FilterSubject:     subjectFilter,
+		AckPolicy:         jetstream.AckExplicitPolicy,
+		InactiveThreshold: inactiveThreshold,
+	})
+	if err != nil {
+		return fmt.Errorf("eventbus: create ephemeral consumer on stream %q (filter %q): %w", streamName, subjectFilter, err)
+	}
+
+	return c.consume(ctx, cons, cons.CachedInfo().Name, handler)
+}
+
+// consume starts pulling from an already-created consumer and runs
+// handler for every delivered message until ctx is cancelled, acking on a
+// nil error and nak'ing otherwise. Shared by Subscribe and
+// SubscribeEphemeral, which differ only in how the consumer itself is
+// created.
+func (c *Client) consume(ctx context.Context, cons jetstream.Consumer, consumerName string, handler func(msg jetstream.Msg) error) error {
 	consCtx, err := cons.Consume(func(msg jetstream.Msg) {
 		if err := handler(msg); err != nil {
 			// Leave it to redelivery; a future milestone may add structured

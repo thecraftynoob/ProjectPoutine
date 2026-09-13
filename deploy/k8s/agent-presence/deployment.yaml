@@ -22,9 +22,13 @@ spec:
           ports:
             - containerPort: 50055
               name: grpc
+            - containerPort: 8085
+              name: ws
           env:
             - name: AGENT_PRESENCE_GRPC_PORT
               value: "50055"
+            - name: AGENT_PRESENCE_WS_ADDR
+              value: ":8085"
             - name: REDIS_ADDR
               valueFrom:
                 configMapKeyRef:
