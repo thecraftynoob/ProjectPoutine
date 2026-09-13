@@ -1,0 +1,22 @@
+# Shared, non-secret connection settings for reaching the docker-compose
+# infra (Postgres, Redis, NATS JetStream) from inside the ccaas-dev
+# namespace. Per the architecture doc Section 1.4, infra runs via
+# docker-compose on the host during local dev, not as K8s workloads --
+# Docker Desktop's K8s nodes can reach host-published ports through the
+# special host.docker.internal DNS name, which is what these values point
+# at. This is a LOCAL-DEV-ONLY convenience: a real cluster would replace
+# this ConfigMap's values with real service DNS names/addresses for
+# cluster-hosted or managed infra, with no code change required (only the
+# config source changes, same principle as Section 1.4's Secrets guidance).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ccaas-infra-config
+  namespace: ccaas-dev
+data:
+  REDIS_ADDR: "host.docker.internal:6379"
+  NATS_URL: "nats://host.docker.internal:4222"
+  POSTGRES_HOST: "host.docker.internal"
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: "ccaas"
+  POSTGRES_DB: "ccaas"

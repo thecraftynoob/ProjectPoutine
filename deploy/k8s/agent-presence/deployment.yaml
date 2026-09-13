@@ -25,6 +25,16 @@ spec:
           env:
             - name: AGENT_PRESENCE_GRPC_PORT
               value: "50055"
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: REDIS_ADDR
+            - name: NATS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: NATS_URL
           livenessProbe:
             exec:
               command: ["grpc_health_probe", "-addr=:50055"]

@@ -14,6 +14,7 @@ vendor/
 .env.local
 *.env.local
 .env
+/deploy/k8s/infra-secret.local.yaml
 
 # --- Docker ---
 docker-compose.override.yml

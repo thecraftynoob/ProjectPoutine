@@ -25,6 +25,48 @@ spec:
           env:
             - name: TASK_ROUTER_GRPC_PORT
               value: "50054"
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: REDIS_ADDR
+            - name: NATS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: NATS_URL
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-infra-secret
+                  key: POSTGRES_PASSWORD
+            # POSTGRES_DSN is what services/task-router/cmd/main.go actually
+            # reads (env:"POSTGRES_DSN,required"); composed here via
+            # Kubernetes' $(VAR) env-var interpolation from the discrete
+            # parts above rather than duplicating the whole DSN as its own
+            # ConfigMap entry.
+            - name: POSTGRES_DSN
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
           livenessProbe:
             exec:
               command: ["grpc_health_probe", "-addr=:50054"]
