@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+package taskrouter.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1";
+
+// TaskRouterService is the hot-path domain contract for the Task Router
+// (TASK_ROUTER_SPECIFICATION.md Sections 3.2-3.4, 3.7): Agent CRUD/
+// presence/capacity/queues, Task lifecycle, the Reservation handshake, and
+// the aggregate dashboard view.
+//
+// NOTE: tenant_id is deliberately NOT a field on any message here. Per
+// architecture doc Section 1.1, tenant scoping travels as gRPC metadata
+// (`x-tenant-id`), injected/validated by pkg/tenantctx — never as an
+// in-message field.
+//
+// NOTE: Section 3.5 ("Real-Time Notification Delivery" / streaming push to
+// an Agent Desktop) is explicitly REMOVED from this service's contract per
+// the production scoping decision — Task Router only publishes domain
+// events to NATS (see internal/events); a future, separate Agent & Presence
+// Service milestone is the documented consumer that would relay those to
+// connected clients. No streaming/WebSocket RPC is defined here.
+service TaskRouterService {
+  // --- Agent Presence & Profile Control (spec Section 3.2) ---
+
+  // CreateAgent provisions a new agent's routing profile. Rejected if the
+  // agent ID already exists (atomic uniqueness guarantee, spec Section
+  // 5.4 rule 1). The initial status is NOT validated against the Status
+  // registry at creation time (spec Section 3.2) — only the status-update
+  // capability enforces that.
+  rpc CreateAgent(CreateAgentRequest) returns (Agent);
+
+  // ListAgents enumerates all agents for the tenant.
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+
+  // GetAgent retrieves one agent's full profile.
+  rpc GetAgent(GetAgentRequest) returns (Agent);
+
+  // DeleteAgent deprovisions an agent's routing profile. If the agent
+  // currently holds a Reserved or Active task, that task is atomically
+  // reset to Pending at its original FIFO position and any tied
+  // Offered/Accepted reservation is marked Rejected (reason: agent
+  // deleted) — spec Section 5.5.
+  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
+
+  // SetAgentStatus changes an agent's master presence value. Rejected if
+  // the target status is not a registered Status value.
+  rpc SetAgentStatus(SetAgentStatusRequest) returns (Agent);
+
+  // ReplaceAgentCapacity fully replaces an agent's per-channel capacity
+  // map. Any channel omitted from the input is removed. `active` supplied
+  // by the caller is always ignored — a retained channel keeps its live
+  // `active` count, a new channel starts at 0.
+  rpc ReplaceAgentCapacity(ReplaceAgentCapacityRequest) returns (Agent);
+
+  // ToggleChannelReady flips a single channel's `ready` flag without
+  // resending the whole capacity map. If the channel does not yet exist on
+  // the agent, it is created with default max=1, interruptible=true.
+  rpc ToggleChannelReady(ToggleChannelReadyRequest) returns (Agent);
+
+  // ReplaceAgentQueues fully replaces an agent's queue memberships.
+  // Rejected entirely (no partial application) if any queue ID does not
+  // exist.
+  rpc ReplaceAgentQueues(ReplaceAgentQueuesRequest) returns (Agent);
+
+  // ReplaceAgentAttributes fully replaces an agent's stored attribute
+  // values, validated for shape against the Attribute registry. Not used
+  // for routing. Emits no event (spec Section 6.2).
+  rpc ReplaceAgentAttributes(ReplaceAgentAttributesRequest) returns (Agent);
+
+  // ListAgentPendingOffers returns the agent's currently Offered
+  // reservations.
+  rpc ListAgentPendingOffers(ListAgentPendingOffersRequest) returns (ListAgentPendingOffersResponse);
+
+  // --- Task Lifecycle & Ingestion (spec Section 3.3) ---
+
+  // EnqueueTask submits a new unit of work for routing, creating it in
+  // Pending status. Rejected if the queue doesn't exist, an attribute is
+  // invalid, or a caller-supplied task ID collides with an existing one.
+  rpc EnqueueTask(EnqueueTaskRequest) returns (Task);
+
+  // ListTasks enumerates all tasks for the tenant.
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+
+  // GetTask retrieves one task's current state.
+  rpc GetTask(GetTaskRequest) returns (Task);
+
+  // CompleteTask signals that an Active task's work is finished, freeing
+  // the assigned agent's capacity. Rejected unless the task is currently
+  // Active.
+  rpc CompleteTask(CompleteTaskRequest) returns (Task);
+
+  // --- Reservation Handshake (spec Section 3.4) ---
+
+  // AcceptReservation lets an agent agree to take the offered task.
+  // Rejected unless the reservation is currently Offered.
+  rpc AcceptReservation(AcceptReservationRequest) returns (Reservation);
+
+  // RejectReservation lets an agent explicitly decline the offered task.
+  // Rejected unless the reservation is currently Offered (race-safe
+  // re-check). Returns the task to Pending at its original enqueue
+  // position and sets the agent's status to the system value
+  // "Not Responding".
+  rpc RejectReservation(RejectReservationRequest) returns (Reservation);
+
+  // --- Observability / Operational (spec Section 3.7) ---
+
+  // GetDashboard returns all agents (with live assigned-task counts) and
+  // all tasks (with current status/assignment) in a single call, for a
+  // monitoring display.
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse);
+}
+
+// AttributeValue is the polymorphic numeric|boolean value type used in
+// Agent.attributes and Task.required_attributes (spec Sections 2.1, 2.2,
+// 2.6). Exactly one field is expected to be set on a valid instance; which
+// one is set is compared against the Attribute registry's declared type at
+// validation time (spec Section 4.4).
+message AttributeValue {
+  oneof kind {
+    double number_value = 1;
+    bool bool_value = 2;
+  }
+}
+
+// ChannelCapacity is one entry in Agent.capacity, keyed by channel/task
+// type (spec Section 2.1).
+message ChannelCapacity {
+  // Stored and toggleable, but not read by the matching algorithm (spec
+  // Sections 2.1, 5.3, 7.3). Defaults to true.
+  bool ready = 1;
+  // Maximum concurrent tasks of this channel type. Defaults to 1.
+  int32 max = 2;
+  // Current concurrent count. Exclusively managed by the routing system;
+  // ignored when supplied by a client on a capacity-update call.
+  int32 active = 3;
+  // Stored only, not read anywhere in current logic (spec Section 7.3).
+  // Defaults to true.
+  bool interruptible = 4;
+}
+
+// Agent mirrors spec Section 2.1 exactly.
+message Agent {
+  string agent_id = 1;
+  string status = 2;
+  map<string, AttributeValue> attributes = 3;
+  map<string, ChannelCapacity> capacity = 4;
+  repeated string queues = 5;
+  google.protobuf.Timestamp status_changed_at = 6;
+}
+
+// Task mirrors spec Section 2.2 exactly.
+message Task {
+  string task_id = 1;
+  string queue_id = 2;
+  string task_type = 3;
+  map<string, AttributeValue> required_attributes = 4;
+  google.protobuf.Timestamp enqueued_at = 5;
+  // One of: "Pending", "Reserved", "Active", "Completed" (spec Section 5.1).
+  string status = 6;
+  // The active Offered/Accepted reservation for this task, if any. Empty
+  // string means null/none.
+  string current_reservation_id = 7;
+  // Set when matched; cleared when a reservation for this task is
+  // rejected; retained (not cleared) once the task completes. Empty
+  // string means null/none.
+  string assigned_agent_id = 8;
+}
+
+// Reservation mirrors spec Section 2.3 exactly.
+message Reservation {
+  string reservation_id = 1;
+  string task_id = 2;
+  string agent_id = 3;
+  // One of: "Offered", "Accepted", "Rejected" (spec Section 5.2).
+  string status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// --- Agent RPC messages ---
+
+message CreateAgentRequest {
+  string agent_id = 1;
+  // Unvalidated against the Status registry at creation time (spec
+  // Section 3.2). Empty string defaults to "Offline" server-side.
+  string status = 2;
+  map<string, AttributeValue> attributes = 3;
+  map<string, ChannelCapacity> capacity = 4;
+  repeated string queues = 5;
+}
+
+message ListAgentsRequest {}
+
+message ListAgentsResponse {
+  repeated Agent agents = 1;
+}
+
+message GetAgentRequest {
+  string agent_id = 1;
+}
+
+message DeleteAgentRequest {
+  string agent_id = 1;
+}
+
+message DeleteAgentResponse {
+  // True if a Reserved/Active task+reservation was resolved as a side
+  // effect of this deletion (spec Section 5.5).
+  bool resolved_in_flight_reservation = 1;
+}
+
+message SetAgentStatusRequest {
+  string agent_id = 1;
+  string status = 2;
+}
+
+message ReplaceAgentCapacityRequest {
+  string agent_id = 1;
+  // Full replacement map. `active` on any entry is ignored server-side.
+  map<string, ChannelCapacity> capacity = 2;
+}
+
+message ToggleChannelReadyRequest {
+  string agent_id = 1;
+  string channel = 2;
+  bool ready = 3;
+}
+
+message ReplaceAgentQueuesRequest {
+  string agent_id = 1;
+  repeated string queues = 2;
+}
+
+message ReplaceAgentAttributesRequest {
+  string agent_id = 1;
+  map<string, AttributeValue> attributes = 2;
+}
+
+message ListAgentPendingOffersRequest {
+  string agent_id = 1;
+}
+
+message ListAgentPendingOffersResponse {
+  repeated Reservation reservations = 1;
+}
+
+// --- Task RPC messages ---
+
+message EnqueueTaskRequest {
+  string queue_id = 1;
+  string task_type = 2;
+  map<string, AttributeValue> required_attributes = 3;
+  // Optional caller-supplied task ID; server-generated if empty.
+  string task_id = 4;
+  // Optional caller-supplied enqueue timestamp (used internally when a
+  // task is returned to Pending, and available to callers for the same
+  // "preserve FIFO position" reason); server clock used if unset.
+  google.protobuf.Timestamp enqueued_at = 5;
+}
+
+message ListTasksRequest {}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message CompleteTaskRequest {
+  string task_id = 1;
+}
+
+// --- Reservation RPC messages ---
+
+message AcceptReservationRequest {
+  string reservation_id = 1;
+}
+
+message RejectReservationRequest {
+  string reservation_id = 1;
+}
+
+// --- Dashboard messages ---
+
+message GetDashboardRequest {}
+
+message GetDashboardResponse {
+  repeated DashboardAgent agents = 1;
+  repeated Task tasks = 2;
+}
+
+message DashboardAgent {
+  Agent agent = 1;
+  // Live count of tasks currently assigned to this agent (Reserved +
+  // Active tasks where assigned_agent_id == this agent), for the
+  // monitoring display (spec Section 3.7).
+  int32 assigned_task_count = 2;
+}

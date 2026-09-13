@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package taskrouter.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1";
+
+// TaskRouterAdminService is the low-change configuration domain contract
+// for the Task Router (TASK_ROUTER_SPECIFICATION.md Sections 3.1, 3.6):
+// Queue registry, Status registry, and Attribute registry. Backed by
+// Postgres (via pkg/pgtenant) rather than the Redis hot path, since this
+// data is long-lived, transactionally queried, and rarely mutated
+// (architecture doc Section 3.1, Tier 2).
+//
+// NOTE: tenant_id is deliberately NOT a field on any message here — see
+// TaskRouterService's note on tenant scoping via gRPC metadata.
+service TaskRouterAdminService {
+  // --- Queue Configuration (spec Section 3.1) ---
+
+  // RegisterQueue creates a new named work bucket. Rejected if the ID
+  // already exists.
+  rpc RegisterQueue(RegisterQueueRequest) returns (Queue);
+
+  // ListQueues enumerates all registered queues.
+  rpc ListQueues(ListQueuesRequest) returns (ListQueuesResponse);
+
+  // GetQueue retrieves one queue plus every agent currently a member of
+  // it.
+  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse);
+
+  // RemoveQueue deletes a queue definition. Any agent still listing this
+  // queue, or any task still referencing it, is not updated — the
+  // reference becomes orphaned rather than blocking the delete.
+  rpc RemoveQueue(RemoveQueueRequest) returns (RemoveQueueResponse);
+
+  // --- Status Registry (spec Section 3.6) ---
+
+  // RegisterStatus extends the allow-list of valid agent statuses.
+  // Rejected if already present.
+  rpc RegisterStatus(RegisterStatusRequest) returns (StatusEntry);
+
+  // ListStatuses enumerates the registry.
+  rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse);
+
+  // RemoveStatus shrinks the allow-list. Agents currently set to this
+  // status are unaffected; the removal only blocks future assignment.
+  rpc RemoveStatus(RemoveStatusRequest) returns (RemoveStatusResponse);
+
+  // --- Attribute Registry (spec Section 3.6) ---
+
+  // RegisterAttribute defines a new named, typed field usable in Agent/
+  // Task attribute maps. Rejected on invalid type or duplicate name.
+  rpc RegisterAttribute(RegisterAttributeRequest) returns (AttributeDefinition);
+
+  // ListAttributes enumerates the registry.
+  rpc ListAttributes(ListAttributesRequest) returns (ListAttributesResponse);
+
+  // GetAttribute retrieves one attribute's definition plus every agent
+  // currently assigned a value for it.
+  rpc GetAttribute(GetAttributeRequest) returns (GetAttributeResponse);
+
+  // RemoveAttribute retires a named field. Existing agent/task values
+  // referencing it are unaffected; removal only blocks future use.
+  rpc RemoveAttribute(RemoveAttributeRequest) returns (RemoveAttributeResponse);
+}
+
+// Queue mirrors spec Section 2.4 exactly.
+message Queue {
+  string queue_id = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+// StatusEntry mirrors spec Section 2.5 exactly.
+message StatusEntry {
+  string status = 1;
+  google.protobuf.Timestamp created_at = 2;
+}
+
+// AttributeType enumerates the two permitted Attribute registry types
+// (spec Section 2.6).
+enum AttributeType {
+  ATTRIBUTE_TYPE_UNSPECIFIED = 0;
+  ATTRIBUTE_TYPE_NUMERIC = 1;
+  ATTRIBUTE_TYPE_BOOLEAN = 2;
+}
+
+// AttributeDefinition mirrors spec Section 2.6 exactly.
+message AttributeDefinition {
+  string name = 1;
+  AttributeType type = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// --- Queue RPC messages ---
+
+message RegisterQueueRequest {
+  string queue_id = 1;
+}
+
+message ListQueuesRequest {}
+
+message ListQueuesResponse {
+  repeated Queue queues = 1;
+}
+
+message GetQueueRequest {
+  string queue_id = 1;
+}
+
+message GetQueueResponse {
+  Queue queue = 1;
+  // Agent IDs currently a member of this queue.
+  repeated string member_agent_ids = 2;
+}
+
+message RemoveQueueRequest {
+  string queue_id = 1;
+}
+
+message RemoveQueueResponse {}
+
+// --- Status RPC messages ---
+
+message RegisterStatusRequest {
+  string status = 1;
+}
+
+message ListStatusesRequest {}
+
+message ListStatusesResponse {
+  repeated StatusEntry statuses = 1;
+}
+
+message RemoveStatusRequest {
+  string status = 1;
+}
+
+message RemoveStatusResponse {}
+
+// --- Attribute RPC messages ---
+
+message RegisterAttributeRequest {
+  string name = 1;
+  AttributeType type = 2;
+}
+
+message ListAttributesRequest {}
+
+message ListAttributesResponse {
+  repeated AttributeDefinition attributes = 1;
+}
+
+message GetAttributeRequest {
+  string name = 1;
+}
+
+message GetAttributeResponse {
+  AttributeDefinition attribute = 1;
+  // Agent IDs currently assigned a value for this attribute.
+  repeated string assigned_agent_ids = 2;
+}
+
+message RemoveAttributeRequest {
+  string name = 1;
+}
+
+message RemoveAttributeResponse {}

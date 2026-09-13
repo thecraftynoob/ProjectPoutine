@@ -28,6 +28,17 @@ services:
     image: redis:7
     container_name: ccaas-redis
     restart: unless-stopped
+    # notify-keyspace-events Ex enables Redis keyspace notifications for
+    # key-expiry ("Ex" = generic expired-event notifications), required by
+    # Task Router's Reservation-expiry mechanism (spec Section 4.3): each
+    # Offered reservation is stored under a TTL-bearing sentinel key, and
+    # Task Router subscribes to "__keyevent@<db>__:expired" to resolve it
+    # atomically when the TTL fires (see
+    # services/task-router/internal/redisdomain/expiry.go and the service
+    # README). Safe to enable platform-wide -- notifications are a Redis
+    # server-level pub/sub feature with negligible overhead, and no other
+    # service in this repo relies on keys NOT emitting expiry events.
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
     ports:
       - "6379:6379"
     volumes:
