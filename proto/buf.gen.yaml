@@ -1,0 +1,15 @@
+# Local (go install-able) plugins rather than buf.build remote plugins, so
+# codegen works without relying on network access to the Buf Schema Registry.
+#
+# Prerequisites (see repo README / Makefile):
+#   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+#   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+# and $(go env GOPATH)/bin must be on PATH.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: ../pkg/genproto
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: ../pkg/genproto
+    opt: paths=source_relative

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: background-worker-pool-svc
+  namespace: ccaas-dev
+  labels:
+    app: background-worker-pool
+spec:
+  selector:
+    app: background-worker-pool
+  ports:
+    - name: grpc
+      port: 50058
+      targetPort: 50058

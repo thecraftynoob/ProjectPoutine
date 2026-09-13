@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: task-router-svc
+  namespace: ccaas-dev
+  labels:
+    app: task-router
+spec:
+  selector:
+    app: task-router
+  ports:
+    - name: grpc
+      port: 50054
+      targetPort: 50054

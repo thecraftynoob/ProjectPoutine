@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digital-channels-gateway-deployment
+  namespace: ccaas-dev
+  labels:
+    app: digital-channels-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: digital-channels-gateway
+  template:
+    metadata:
+      labels:
+        app: digital-channels-gateway
+    spec:
+      containers:
+        - name: digital-channels-gateway
+          image: ccaas/digital-channels-gateway:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50053
+              name: grpc
+          env:
+            - name: DIGITAL_CHANNELS_GATEWAY_GRPC_PORT
+              value: "50053"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50053"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50053"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

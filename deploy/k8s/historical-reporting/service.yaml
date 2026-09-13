@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: historical-reporting-svc
+  namespace: ccaas-dev
+  labels:
+    app: historical-reporting
+spec:
+  selector:
+    app: historical-reporting
+  ports:
+    - name: grpc
+      port: 50057
+      targetPort: 50057

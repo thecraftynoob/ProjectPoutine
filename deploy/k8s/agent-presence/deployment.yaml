@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-presence-deployment
+  namespace: ccaas-dev
+  labels:
+    app: agent-presence
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-presence
+  template:
+    metadata:
+      labels:
+        app: agent-presence
+    spec:
+      containers:
+        - name: agent-presence
+          image: ccaas/agent-presence:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50055
+              name: grpc
+          env:
+            - name: AGENT_PRESENCE_GRPC_PORT
+              value: "50055"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50055"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50055"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

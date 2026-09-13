@@ -1,0 +1,35 @@
+# --- Go ---
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# --- Env / secrets ---
+.env.local
+*.env.local
+.env
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- IDE / editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Generated proto output is committed by default for this repo;
+#     uncomment below if the team later decides to gitignore genproto instead.
+# /pkg/genproto/
+
+# --- Misc ---
+*.log
+coverage.out

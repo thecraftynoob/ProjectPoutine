@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: historical-reporting-deployment
+  namespace: ccaas-dev
+  labels:
+    app: historical-reporting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: historical-reporting
+  template:
+    metadata:
+      labels:
+        app: historical-reporting
+    spec:
+      containers:
+        - name: historical-reporting
+          image: ccaas/historical-reporting:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50057
+              name: grpc
+          env:
+            - name: HISTORICAL_REPORTING_GRPC_PORT
+              value: "50057"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50057"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50057"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

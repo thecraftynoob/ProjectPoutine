@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-router-deployment
+  namespace: ccaas-dev
+  labels:
+    app: task-router
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-router
+  template:
+    metadata:
+      labels:
+        app: task-router
+    spec:
+      containers:
+        - name: task-router
+          image: ccaas/task-router:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50054
+              name: grpc
+          env:
+            - name: TASK_ROUTER_GRPC_PORT
+              value: "50054"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50054"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50054"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

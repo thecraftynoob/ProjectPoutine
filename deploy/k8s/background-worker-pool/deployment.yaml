@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: background-worker-pool-deployment
+  namespace: ccaas-dev
+  labels:
+    app: background-worker-pool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: background-worker-pool
+  template:
+    metadata:
+      labels:
+        app: background-worker-pool
+    spec:
+      containers:
+        - name: background-worker-pool
+          image: ccaas/background-worker-pool:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50058
+              name: grpc
+          env:
+            - name: BACKGROUND_WORKER_POOL_GRPC_PORT
+              value: "50058"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50058"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50058"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

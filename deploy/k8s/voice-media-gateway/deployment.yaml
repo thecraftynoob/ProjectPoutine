@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-media-gateway-deployment
+  namespace: ccaas-dev
+  labels:
+    app: voice-media-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-media-gateway
+  template:
+    metadata:
+      labels:
+        app: voice-media-gateway
+    spec:
+      containers:
+        - name: voice-media-gateway
+          image: ccaas/voice-media-gateway:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50052
+              name: grpc
+          env:
+            - name: VOICE_MEDIA_GATEWAY_GRPC_PORT
+              value: "50052"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50052"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50052"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

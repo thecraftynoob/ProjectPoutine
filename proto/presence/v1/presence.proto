@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package presence.v1;
+
+option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/presence/v1;presencev1";
+
+// PresenceService is owned by the Agent & Presence service (architecture doc
+// Section 2.2) and is the synchronous gRPC contract Task Router uses to ask
+// "who is available right now" (Section 3.2 IPC summary table).
+//
+// NOTE: tenant_id is deliberately NOT a field on any message here. Per
+// architecture doc Section 1.1, tenant scoping travels as gRPC metadata
+// (`x-tenant-id`), injected/validated by the pkg/tenantctx interceptor on
+// both the client and server side — never as an in-message field.
+service PresenceService {
+  // GetAvailableAgents returns the agents currently eligible to receive a
+  // task of the given type from the given queue. This is a contract
+  // skeleton only — the full eligibility/matching semantics live in the
+  // Task Router domain (see TASK_ROUTER_SPECIFICATION.md) and are not
+  // implemented by this scaffold.
+  rpc GetAvailableAgents(GetAvailableAgentsRequest) returns (GetAvailableAgentsResponse);
+}
+
+message GetAvailableAgentsRequest {
+  string queue_id = 1;
+  string task_type = 2;
+}
+
+message GetAvailableAgentsResponse {
+  repeated Agent agents = 1;
+}
+
+message Agent {
+  string agent_id = 1;
+  string status = 2;
+  repeated string queues = 3;
+}

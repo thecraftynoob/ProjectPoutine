@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: workflow-ivr-svc
+  namespace: ccaas-dev
+  labels:
+    app: workflow-ivr
+spec:
+  selector:
+    app: workflow-ivr
+  ports:
+    - name: grpc
+      port: 50056
+      targetPort: 50056

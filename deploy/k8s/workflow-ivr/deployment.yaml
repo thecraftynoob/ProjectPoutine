@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workflow-ivr-deployment
+  namespace: ccaas-dev
+  labels:
+    app: workflow-ivr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: workflow-ivr
+  template:
+    metadata:
+      labels:
+        app: workflow-ivr
+    spec:
+      containers:
+        - name: workflow-ivr
+          image: ccaas/workflow-ivr:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50056
+              name: grpc
+          env:
+            - name: WORKFLOW_IVR_GRPC_PORT
+              value: "50056"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50056"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50056"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

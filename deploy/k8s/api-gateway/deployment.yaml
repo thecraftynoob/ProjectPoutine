@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+  namespace: ccaas-dev
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: ccaas/api-gateway:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50059
+              name: grpc
+          env:
+            - name: API_GATEWAY_GRPC_PORT
+              value: "50059"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50059"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50059"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

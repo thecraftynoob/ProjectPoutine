@@ -1,0 +1,72 @@
+# ProjectPoutine — CCaaS Platform (monorepo)
+
+Multi-tenant Contact Center as a Service platform. Go microservices, gRPC
+contracts, NATS JetStream event bus, PostgreSQL, Redis.
+
+**Design source of truth:** read these two documents before changing
+anything structural.
+
+- [`CCAAS_ENTERPRISE_ARCHITECTURE.md`](./CCAAS_ENTERPRISE_ARCHITECTURE.md) — service topology, multi-tenancy model, data/IPC architecture, naming conventions.
+- [`TASK_ROUTER_SPECIFICATION.md`](./TASK_ROUTER_SPECIFICATION.md) — the Task Router's full domain spec (routing algorithm, state machines, event catalog). Not yet implemented as of this scaffold.
+
+## Status
+
+This is a **scaffold**: repo layout, shared libraries, one proven proto
+contract (`presence.v1`), and skeleton services that build, start, and
+respond to gRPC health checks. No domain/business logic exists yet.
+
+## Layout
+
+```
+/proto           buf-managed gRPC contracts (one per service, most empty)
+/pkg              shared Go libraries (tenant context, event bus, pg helpers, health, config)
+  /genproto       generated Go code from /proto (buf generate output)
+/services         one directory per deployable service
+  /{name}/cmd     main.go entrypoint
+  /{name}/internal domain logic (empty scaffold today)
+/deploy/k8s       one manifest set per service, namespace ccaas-dev
+docker-compose.yml  infra only: Postgres 16, Redis 7, NATS (JetStream)
+```
+
+Services (per architecture doc Section 2.2): `tenant-identity`,
+`voice-media-gateway`, `digital-channels-gateway`, `task-router`,
+`agent-presence`, `workflow-ivr`, `historical-reporting`,
+`background-worker-pool`, `api-gateway`.
+
+## Running infra locally
+
+```powershell
+docker compose up -d
+docker compose down
+```
+
+Copy `.env.local.example` to `.env.local` and adjust as needed — it documents
+every `POSTGRES_*` / `REDIS_*` / `NATS_*` variable the compose file and
+services read. `.env.local` is git-ignored.
+
+## Running a service locally
+
+```powershell
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+go run ./services/task-router/cmd
+```
+
+Each service reads its config from environment variables (see
+`/pkg/config` and that service's `cmd/main.go`).
+
+## Working with proto contracts
+
+```powershell
+cd proto
+buf generate
+```
+
+Generated code lands in `/pkg/genproto/{package}`. Requires
+`protoc-gen-go` and `protoc-gen-go-grpc` on `PATH` (`go install` targets —
+see `Makefile`).
+
+## Makefile targets
+
+`proto-gen`, `build`, `test`, `tidy`, `compose-up`, `compose-down`. Run
+`make <target>` from repo root (or invoke the underlying commands directly
+on Windows without `make` — see the Makefile for the exact commands).

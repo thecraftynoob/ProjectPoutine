@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-identity-deployment
+  namespace: ccaas-dev
+  labels:
+    app: tenant-identity
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tenant-identity
+  template:
+    metadata:
+      labels:
+        app: tenant-identity
+    spec:
+      containers:
+        - name: tenant-identity
+          image: ccaas/tenant-identity:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051
+              name: grpc
+          env:
+            - name: TENANT_IDENTITY_GRPC_PORT
+              value: "50051"
+          livenessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50051"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["grpc_health_probe", "-addr=:50051"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

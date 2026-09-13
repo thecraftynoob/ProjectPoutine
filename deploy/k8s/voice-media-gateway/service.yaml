@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-media-gateway-svc
+  namespace: ccaas-dev
+  labels:
+    app: voice-media-gateway
+spec:
+  selector:
+    app: voice-media-gateway
+  ports:
+    - name: grpc
+      port: 50052
+      targetPort: 50052
