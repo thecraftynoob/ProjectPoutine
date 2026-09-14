@@ -34,6 +34,11 @@
 #     (not just the two services with RLS tables today), so a future
 #     RLS-protected table never silently inherits the superuser-bypass bug
 #     again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ccaas-infra-config
+  namespace: ccaas-dev
 data:
   REDIS_ADDR: "host.docker.internal:6379"
   NATS_URL: "nats://host.docker.internal:4222"
