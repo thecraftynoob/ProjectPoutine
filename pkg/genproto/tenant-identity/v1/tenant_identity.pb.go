@@ -643,6 +643,129 @@ func (x *ListUsersResponse) GetUsers() []*User {
 	return nil
 }
 
+type IssueServiceTokenRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant the resulting token should be scoped to (`tid` claim). A
+	// service call always acts within some tenant-scoped operation, so this
+	// is always required -- there is no cross-tenant service token.
+	TenantId string `protobuf:"bytes,1,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"`
+	// Identifies the calling service for the `sub` claim (e.g.
+	// "task-router", "agent-presence") -- diagnostics/audit only, not part
+	// of the trust decision itself (the shared_secret is).
+	CallerService string `protobuf:"bytes,2,opt,name=caller_service,json=callerService,proto3" json:"caller_service,omitempty"`
+	// The shared service credential, sourced from the same Kubernetes
+	// Secret (ccaas-service-credential) on both the caller and this
+	// service. Deliberately NOT a per-service username/password -- see this
+	// RPC's file-level doc comment for the explicit scoping rationale.
+	SharedSecret  string `protobuf:"bytes,3,opt,name=shared_secret,json=sharedSecret,proto3" json:"shared_secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueServiceTokenRequest) Reset() {
+	*x = IssueServiceTokenRequest{}
+	mi := &file_tenant_identity_v1_tenant_identity_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueServiceTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueServiceTokenRequest) ProtoMessage() {}
+
+func (x *IssueServiceTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_tenant_identity_v1_tenant_identity_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueServiceTokenRequest.ProtoReflect.Descriptor instead.
+func (*IssueServiceTokenRequest) Descriptor() ([]byte, []int) {
+	return file_tenant_identity_v1_tenant_identity_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *IssueServiceTokenRequest) GetTenantId() string {
+	if x != nil {
+		return x.TenantId
+	}
+	return ""
+}
+
+func (x *IssueServiceTokenRequest) GetCallerService() string {
+	if x != nil {
+		return x.CallerService
+	}
+	return ""
+}
+
+func (x *IssueServiceTokenRequest) GetSharedSecret() string {
+	if x != nil {
+		return x.SharedSecret
+	}
+	return ""
+}
+
+type IssueServiceTokenResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Signed, short-lived JWT -- same shape as LoginResponse.token.
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueServiceTokenResponse) Reset() {
+	*x = IssueServiceTokenResponse{}
+	mi := &file_tenant_identity_v1_tenant_identity_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueServiceTokenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueServiceTokenResponse) ProtoMessage() {}
+
+func (x *IssueServiceTokenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_tenant_identity_v1_tenant_identity_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueServiceTokenResponse.ProtoReflect.Descriptor instead.
+func (*IssueServiceTokenResponse) Descriptor() ([]byte, []int) {
+	return file_tenant_identity_v1_tenant_identity_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *IssueServiceTokenResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *IssueServiceTokenResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 var File_tenant_identity_v1_tenant_identity_proto protoreflect.FileDescriptor
 
 const file_tenant_identity_v1_tenant_identity_proto_rawDesc = "" +
@@ -684,17 +807,26 @@ const file_tenant_identity_v1_tenant_identity_proto_rawDesc = "" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x12\n" +
 	"\x10ListUsersRequest\"B\n" +
 	"\x11ListUsersResponse\x12-\n" +
-	"\x05users\x18\x01 \x03(\v2\x17.tenantidentity.v1.UserR\x05users2\x8d\x02\n" +
+	"\x05users\x18\x01 \x03(\v2\x17.tenantidentity.v1.UserR\x05users\"\x83\x01\n" +
+	"\x18IssueServiceTokenRequest\x12\x1b\n" +
+	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12%\n" +
+	"\x0ecaller_service\x18\x02 \x01(\tR\rcallerService\x12#\n" +
+	"\rshared_secret\x18\x03 \x01(\tR\fsharedSecret\"l\n" +
+	"\x19IssueServiceTokenResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\x8d\x02\n" +
 	"\rTenantService\x12Q\n" +
 	"\fCreateTenant\x12&.tenantidentity.v1.CreateTenantRequest\x1a\x19.tenantidentity.v1.Tenant\x12K\n" +
 	"\tGetTenant\x12#.tenantidentity.v1.GetTenantRequest\x1a\x19.tenantidentity.v1.Tenant\x12\\\n" +
-	"\vListTenants\x12%.tenantidentity.v1.ListTenantsRequest\x1a&.tenantidentity.v1.ListTenantsResponse2\xc9\x02\n" +
+	"\vListTenants\x12%.tenantidentity.v1.ListTenantsRequest\x1a&.tenantidentity.v1.ListTenantsResponse2\xb9\x03\n" +
 	"\x0fIdentityService\x12K\n" +
 	"\n" +
 	"CreateUser\x12$.tenantidentity.v1.CreateUserRequest\x1a\x17.tenantidentity.v1.User\x12J\n" +
 	"\x05Login\x12\x1f.tenantidentity.v1.LoginRequest\x1a .tenantidentity.v1.LoginResponse\x12E\n" +
 	"\aGetUser\x12!.tenantidentity.v1.GetUserRequest\x1a\x17.tenantidentity.v1.User\x12V\n" +
-	"\tListUsers\x12#.tenantidentity.v1.ListUsersRequest\x1a$.tenantidentity.v1.ListUsersResponseBZZXgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1;tenantidentityv1b\x06proto3"
+	"\tListUsers\x12#.tenantidentity.v1.ListUsersRequest\x1a$.tenantidentity.v1.ListUsersResponse\x12n\n" +
+	"\x11IssueServiceToken\x12+.tenantidentity.v1.IssueServiceTokenRequest\x1a,.tenantidentity.v1.IssueServiceTokenResponseBZZXgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1;tenantidentityv1b\x06proto3"
 
 var (
 	file_tenant_identity_v1_tenant_identity_proto_rawDescOnce sync.Once
@@ -708,47 +840,52 @@ func file_tenant_identity_v1_tenant_identity_proto_rawDescGZIP() []byte {
 	return file_tenant_identity_v1_tenant_identity_proto_rawDescData
 }
 
-var file_tenant_identity_v1_tenant_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_tenant_identity_v1_tenant_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_tenant_identity_v1_tenant_identity_proto_goTypes = []any{
-	(*Tenant)(nil),                // 0: tenantidentity.v1.Tenant
-	(*CreateTenantRequest)(nil),   // 1: tenantidentity.v1.CreateTenantRequest
-	(*GetTenantRequest)(nil),      // 2: tenantidentity.v1.GetTenantRequest
-	(*ListTenantsRequest)(nil),    // 3: tenantidentity.v1.ListTenantsRequest
-	(*ListTenantsResponse)(nil),   // 4: tenantidentity.v1.ListTenantsResponse
-	(*User)(nil),                  // 5: tenantidentity.v1.User
-	(*CreateUserRequest)(nil),     // 6: tenantidentity.v1.CreateUserRequest
-	(*LoginRequest)(nil),          // 7: tenantidentity.v1.LoginRequest
-	(*LoginResponse)(nil),         // 8: tenantidentity.v1.LoginResponse
-	(*GetUserRequest)(nil),        // 9: tenantidentity.v1.GetUserRequest
-	(*ListUsersRequest)(nil),      // 10: tenantidentity.v1.ListUsersRequest
-	(*ListUsersResponse)(nil),     // 11: tenantidentity.v1.ListUsersResponse
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(*Tenant)(nil),                    // 0: tenantidentity.v1.Tenant
+	(*CreateTenantRequest)(nil),       // 1: tenantidentity.v1.CreateTenantRequest
+	(*GetTenantRequest)(nil),          // 2: tenantidentity.v1.GetTenantRequest
+	(*ListTenantsRequest)(nil),        // 3: tenantidentity.v1.ListTenantsRequest
+	(*ListTenantsResponse)(nil),       // 4: tenantidentity.v1.ListTenantsResponse
+	(*User)(nil),                      // 5: tenantidentity.v1.User
+	(*CreateUserRequest)(nil),         // 6: tenantidentity.v1.CreateUserRequest
+	(*LoginRequest)(nil),              // 7: tenantidentity.v1.LoginRequest
+	(*LoginResponse)(nil),             // 8: tenantidentity.v1.LoginResponse
+	(*GetUserRequest)(nil),            // 9: tenantidentity.v1.GetUserRequest
+	(*ListUsersRequest)(nil),          // 10: tenantidentity.v1.ListUsersRequest
+	(*ListUsersResponse)(nil),         // 11: tenantidentity.v1.ListUsersResponse
+	(*IssueServiceTokenRequest)(nil),  // 12: tenantidentity.v1.IssueServiceTokenRequest
+	(*IssueServiceTokenResponse)(nil), // 13: tenantidentity.v1.IssueServiceTokenResponse
+	(*timestamppb.Timestamp)(nil),     // 14: google.protobuf.Timestamp
 }
 var file_tenant_identity_v1_tenant_identity_proto_depIdxs = []int32{
-	12, // 0: tenantidentity.v1.Tenant.created_at:type_name -> google.protobuf.Timestamp
+	14, // 0: tenantidentity.v1.Tenant.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 1: tenantidentity.v1.ListTenantsResponse.tenants:type_name -> tenantidentity.v1.Tenant
-	12, // 2: tenantidentity.v1.User.created_at:type_name -> google.protobuf.Timestamp
-	12, // 3: tenantidentity.v1.LoginResponse.expires_at:type_name -> google.protobuf.Timestamp
+	14, // 2: tenantidentity.v1.User.created_at:type_name -> google.protobuf.Timestamp
+	14, // 3: tenantidentity.v1.LoginResponse.expires_at:type_name -> google.protobuf.Timestamp
 	5,  // 4: tenantidentity.v1.ListUsersResponse.users:type_name -> tenantidentity.v1.User
-	1,  // 5: tenantidentity.v1.TenantService.CreateTenant:input_type -> tenantidentity.v1.CreateTenantRequest
-	2,  // 6: tenantidentity.v1.TenantService.GetTenant:input_type -> tenantidentity.v1.GetTenantRequest
-	3,  // 7: tenantidentity.v1.TenantService.ListTenants:input_type -> tenantidentity.v1.ListTenantsRequest
-	6,  // 8: tenantidentity.v1.IdentityService.CreateUser:input_type -> tenantidentity.v1.CreateUserRequest
-	7,  // 9: tenantidentity.v1.IdentityService.Login:input_type -> tenantidentity.v1.LoginRequest
-	9,  // 10: tenantidentity.v1.IdentityService.GetUser:input_type -> tenantidentity.v1.GetUserRequest
-	10, // 11: tenantidentity.v1.IdentityService.ListUsers:input_type -> tenantidentity.v1.ListUsersRequest
-	0,  // 12: tenantidentity.v1.TenantService.CreateTenant:output_type -> tenantidentity.v1.Tenant
-	0,  // 13: tenantidentity.v1.TenantService.GetTenant:output_type -> tenantidentity.v1.Tenant
-	4,  // 14: tenantidentity.v1.TenantService.ListTenants:output_type -> tenantidentity.v1.ListTenantsResponse
-	5,  // 15: tenantidentity.v1.IdentityService.CreateUser:output_type -> tenantidentity.v1.User
-	8,  // 16: tenantidentity.v1.IdentityService.Login:output_type -> tenantidentity.v1.LoginResponse
-	5,  // 17: tenantidentity.v1.IdentityService.GetUser:output_type -> tenantidentity.v1.User
-	11, // 18: tenantidentity.v1.IdentityService.ListUsers:output_type -> tenantidentity.v1.ListUsersResponse
-	12, // [12:19] is the sub-list for method output_type
-	5,  // [5:12] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	14, // 5: tenantidentity.v1.IssueServiceTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 6: tenantidentity.v1.TenantService.CreateTenant:input_type -> tenantidentity.v1.CreateTenantRequest
+	2,  // 7: tenantidentity.v1.TenantService.GetTenant:input_type -> tenantidentity.v1.GetTenantRequest
+	3,  // 8: tenantidentity.v1.TenantService.ListTenants:input_type -> tenantidentity.v1.ListTenantsRequest
+	6,  // 9: tenantidentity.v1.IdentityService.CreateUser:input_type -> tenantidentity.v1.CreateUserRequest
+	7,  // 10: tenantidentity.v1.IdentityService.Login:input_type -> tenantidentity.v1.LoginRequest
+	9,  // 11: tenantidentity.v1.IdentityService.GetUser:input_type -> tenantidentity.v1.GetUserRequest
+	10, // 12: tenantidentity.v1.IdentityService.ListUsers:input_type -> tenantidentity.v1.ListUsersRequest
+	12, // 13: tenantidentity.v1.IdentityService.IssueServiceToken:input_type -> tenantidentity.v1.IssueServiceTokenRequest
+	0,  // 14: tenantidentity.v1.TenantService.CreateTenant:output_type -> tenantidentity.v1.Tenant
+	0,  // 15: tenantidentity.v1.TenantService.GetTenant:output_type -> tenantidentity.v1.Tenant
+	4,  // 16: tenantidentity.v1.TenantService.ListTenants:output_type -> tenantidentity.v1.ListTenantsResponse
+	5,  // 17: tenantidentity.v1.IdentityService.CreateUser:output_type -> tenantidentity.v1.User
+	8,  // 18: tenantidentity.v1.IdentityService.Login:output_type -> tenantidentity.v1.LoginResponse
+	5,  // 19: tenantidentity.v1.IdentityService.GetUser:output_type -> tenantidentity.v1.User
+	11, // 20: tenantidentity.v1.IdentityService.ListUsers:output_type -> tenantidentity.v1.ListUsersResponse
+	13, // 21: tenantidentity.v1.IdentityService.IssueServiceToken:output_type -> tenantidentity.v1.IssueServiceTokenResponse
+	14, // [14:22] is the sub-list for method output_type
+	6,  // [6:14] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_tenant_identity_v1_tenant_identity_proto_init() }
@@ -762,7 +899,7 @@ func file_tenant_identity_v1_tenant_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tenant_identity_v1_tenant_identity_proto_rawDesc), len(file_tenant_identity_v1_tenant_identity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

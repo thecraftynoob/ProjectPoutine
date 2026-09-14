@@ -50,14 +50,15 @@ option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant
 //     service's steady-state RPCs.
 //
 // TENANTCTX EXEMPTION: CreateTenant, GetTenant, ListTenants, CreateUser,
-// and Login are exempt from pkg/tenantctx's interceptor (see
-// services/tenant-identity/cmd/main.go's exemption list) -- each is
-// reachable with no established tenant context, by design (see above).
+// Login, and IssueServiceToken are exempt from pkg/tenantctx's interceptor
+// (see services/tenant-identity/cmd/main.go's exemption list) -- each is
+// reachable with no established tenant context, by design (see above, and
+// see IssueServiceToken's own doc comment for why it joins this list).
 // GetUser and ListUsers are NOT exempt: they operate within an already-
 // established tenant context exactly like every other service's
-// steady-state RPCs, so they go through the same x-tenant-id metadata
-// interceptor as Task Router's/Agent Presence's RPCs and require valid
-// x-tenant-id metadata to be present on the call.
+// steady-state RPCs, so they go through the same verified-JWT interceptor
+// as Task Router's/Agent Presence's RPCs and require a valid bearer token
+// on the call.
 service TenantService {
   // CreateTenant registers a brand new tenant in the platform registry.
   // This is how a caller obtains a real tenant_id in the first place --
@@ -98,6 +99,36 @@ service IdentityService {
   // ListUsers enumerates every user within the caller's tenant context
   // (x-tenant-id metadata).
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+
+  // IssueServiceToken mints a short-lived JWT for SERVICE-to-service calls
+  // (as opposed to Login's end-user, username+password path). This is
+  // explicitly a narrow, minimally-scoped mechanism -- NOT a hardened
+  // zero-trust/mTLS service mesh (that is a separate, larger
+  // infrastructure milestone; see CCAAS_ENTERPRISE_ARCHITECTURE.md
+  // Section 1.1 Layer 2's "separately authenticated via mTLS + a distinct
+  // admin scope" language, which this deliberately does NOT attempt to
+  // fully satisfy yet). Authentication here is a single shared credential
+  // (see shared_secret below) every service reads from the same
+  // Kubernetes Secret -- "good enough to retire the blind-trust
+  // placeholder and establish the real bearer-token pattern," not a
+  // hardened per-service identity scheme.
+  //
+  // The caller supplies the tenant it wants to act within (a service
+  // calling another service is always doing so on behalf of some
+  // tenant-scoped operation -- there is no "no tenant" service call in
+  // this system) plus the shared secret. On success, returns a JWT shaped
+  // identically to Login's (same `tid`/`sub`/`roles` claim set consumed by
+  // pkg/tenantctx and pkg/jwtauth) so the verifying interceptor never
+  // needs to distinguish "user-originated" from "service-originated"
+  // calls -- both are just valid JWTs. The `sub` claim is set to
+  // "service:<caller_name>" and `roles` includes "service" so a future
+  // audit/authorization decision CAN distinguish service tokens from user
+  // tokens if ever needed, without requiring it to today.
+  //
+  // Exempt from pkg/tenantctx's interceptor (see TENANTCTX EXEMPTION note
+  // above): this is itself how a caller obtains a token, so it cannot
+  // require one to already exist.
+  rpc IssueServiceToken(IssueServiceTokenRequest) returns (IssueServiceTokenResponse);
 }
 
 // Tenant mirrors the tenants registry table: id, name, created_at. Not
@@ -167,4 +198,26 @@ message ListUsersRequest {}
 
 message ListUsersResponse {
   repeated User users = 1;
+}
+
+message IssueServiceTokenRequest {
+  // The tenant the resulting token should be scoped to (`tid` claim). A
+  // service call always acts within some tenant-scoped operation, so this
+  // is always required -- there is no cross-tenant service token.
+  string tenant_id = 1;
+  // Identifies the calling service for the `sub` claim (e.g.
+  // "task-router", "agent-presence") -- diagnostics/audit only, not part
+  // of the trust decision itself (the shared_secret is).
+  string caller_service = 2;
+  // The shared service credential, sourced from the same Kubernetes
+  // Secret (ccaas-service-credential) on both the caller and this
+  // service. Deliberately NOT a per-service username/password -- see this
+  // RPC's file-level doc comment for the explicit scoping rationale.
+  string shared_secret = 3;
+}
+
+message IssueServiceTokenResponse {
+  // Signed, short-lived JWT -- same shape as LoginResponse.token.
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
 }

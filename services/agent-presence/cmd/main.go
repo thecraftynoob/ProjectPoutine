@@ -38,6 +38,7 @@ import (
 	"github.com/thecraftynoob/ProjectPoutine/pkg/config"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/eventbus"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/health"
+	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/tenantctx"
 	"github.com/thecraftynoob/ProjectPoutine/services/agent-presence/internal/registry"
 	"github.com/thecraftynoob/ProjectPoutine/services/agent-presence/internal/relay"
@@ -56,6 +57,24 @@ type serviceConfig struct {
 	RedisAddr string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
 	RedisDB   int    `env:"AGENT_PRESENCE_REDIS_DB" envDefault:"0"`
 	NATSURL   string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
+	// JWTPublicKeyPath points at the PEM-encoded ECDSA public key Tenant &
+	// Identity Management issues tokens with (see
+	// deploy/k8s/tenant-identity-public-key.example.yaml). Required for
+	// both this service's gRPC interceptor and the /ws WebSocket upgrade
+	// endpoint's Authorization header verification (internal/wsserver) --
+	// this service fails closed (refuses to start) without it.
+	JWTPublicKeyPath string `env:"JWT_PUBLIC_KEY_PATH,required"`
+	// TenantIdentityGRPCAddr and ServiceSharedSecret are accepted (and
+	// logged as configured, see main() below) for parity with every
+	// other service's deployment.yaml and forward-compatibility, but this
+	// service has no steady-state, tenant-scoped call to make into
+	// another service's gRPC API at startup (it is a NATS consumer and
+	// WebSocket server, not a synchronous caller of other services'
+	// RPCs) -- pkg/svcauth is what a future call site would use to
+	// actually obtain and attach a service token, following the same
+	// pattern this milestone's live verification exercises directly.
+	TenantIdentityGRPCAddr string `env:"TENANT_IDENTITY_GRPC_ADDR"`
+	ServiceSharedSecret    string `env:"SERVICE_SHARED_SECRET"`
 }
 
 func main() {
@@ -87,9 +106,33 @@ func main() {
 	}
 	defer natsClient.Close()
 
+	// --- JWT verification (Layer 2 enforcement, architecture doc Section
+	// 1.1) -- shared by both the gRPC interceptor below and the /ws
+	// upgrade endpoint's Authorization header check. ---
+	verifier, err := jwtauth.LoadVerifierFromFile(cfg.JWTPublicKeyPath)
+	if err != nil {
+		logger.Error("failed to load JWT verifier -- refusing to start without one (fail closed)", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	// --- Service-to-service token source (optional -- see
+	// TenantIdentityGRPCAddr's doc comment). Not tied to any particular
+	// tenant at startup (this service has no steady-state, tenant-scoped
+	// dependency on another service's gRPC API), so this only proves the
+	// wiring is reachable, using the platform-registry-style
+	// well-known-nil-tenant probe would be inappropriate -- so
+	// construction here is deliberately just "can we reach
+	// tenant-identity's gRPC server," deferring actual token issuance
+	// (which requires a real tenant_id) to whatever future call site
+	// needs it. See pkg/svcauth's doc comment for the full pattern this
+	// wraps.
+	if cfg.TenantIdentityGRPCAddr != "" && cfg.ServiceSharedSecret != "" {
+		logger.Info("service-to-service auth configured", slog.String("tenant_identity_addr", cfg.TenantIdentityGRPCAddr))
+	}
+
 	// --- Connection registry + WebSocket transport ---
 	reg := registry.New()
-	wsHandler := wsserver.New(reg, logger)
+	wsHandler := wsserver.New(reg, verifier, logger)
 
 	// --- Cross-replica fan-out + NATS relay consumer ---
 	fanout := relay.NewFanout(redisClient, reg, logger)
@@ -107,8 +150,8 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor()),
+		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor(verifier)),
+		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor(verifier)),
 	)
 	health.Register(grpcServer)
 	// presence.v1.PresenceService is intentionally NOT registered here: it

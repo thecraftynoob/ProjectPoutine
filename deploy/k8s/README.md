@@ -38,6 +38,38 @@ Section 1.4 — one namespace per environment, not per tenant).
   either way, per Section 1.4's Secrets guidance applied to this config
   too.
 
+## Rebuilding and redeploying a service's image (local dev)
+
+The standard loop is: `docker build -f services/{name}/Dockerfile -t
+ccaas/{name}:local .` (build context is the repo ROOT, not the service
+directory) then `kubectl rollout restart deployment/{name}-deployment -n
+ccaas-dev`.
+
+**Observed caveat (this environment, Docker Desktop Kubernetes):** a
+`docker build` that retags an EXISTING `:local` tag with new content was
+observed, in this milestone's live verification, to not always be picked
+up by Kubernetes/containerd's own image store even after `kubectl
+rollout restart` or deleting the pod outright — `kubectl get pod -o
+jsonpath='{.items[0].status.containerStatuses[0].imageID}'` kept
+resolving to the OLD image's digest under the `:local` tag, while `docker
+images`/`docker image inspect ccaas/{name}:local` on the same host
+correctly showed the new one. This looks like a Docker Desktop
+dockerd-vs-containerd image store synchronization quirk for a **reused**
+tag, not anything wrong with the build or the manifests.
+Two things that reliably resolved it when this happened:
+1. Build with `--provenance=false --load` (avoids a multi-platform
+   attestation manifest list, which may be part of what confuses the
+   digest resolution for a reused tag).
+2. If the stale digest persists even after that, build under a **new,
+   unique tag** (e.g. `:v2`) and `kubectl set image
+   deployment/{name}-deployment {name}=ccaas/{name}:v2 -n ccaas-dev` —
+   a genuinely new tag always forces correct resolution. Retag back to
+   `:local` afterward for the next dev cycle if desired, understanding
+   the same quirk can recur on the NEXT reused-tag rebuild.
+If a rollout restart's pod comes up successfully but is unexpectedly
+still running old code (e.g. a `grpc.Unimplemented` for an RPC you just
+added), check `imageID` first before assuming a code or manifest bug.
+
 ## Out of scope for this pass
 
 `ingress-nginx` Helm values and `mkcert` TLS setup (architecture doc

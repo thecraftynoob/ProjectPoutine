@@ -2,6 +2,7 @@ package grpcapi
 
 import (
 	"context"
+	"crypto/subtle"
 
 	"github.com/google/uuid"
 	tenantidentityv1 "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1"
@@ -137,4 +138,54 @@ func (s *IdentityServer) ListUsers(ctx context.Context, _ *tenantidentityv1.List
 		out[i] = userToProto(u)
 	}
 	return &tenantidentityv1.ListUsersResponse{Users: out}, nil
+}
+
+// IssueServiceToken mints a short-lived JWT for service-to-service calls,
+// authenticated by a shared credential rather than a username/password --
+// see the proto's doc comment on this RPC for the full scoping rationale
+// (explicitly NOT a hardened mTLS/zero-trust mesh; a narrow, documented
+// stand-in that retires the blind-trust placeholder).
+//
+// Deliberately returns the same generic Unauthenticated error whether the
+// tenant doesn't exist or the shared secret is wrong, for the same
+// enumeration-resistance reason as Login.
+func (s *IdentityServer) IssueServiceToken(ctx context.Context, req *tenantidentityv1.IssueServiceTokenRequest) (*tenantidentityv1.IssueServiceTokenResponse, error) {
+	const invalidCredential = "invalid tenant or service credential"
+
+	tid, err := uuid.Parse(req.GetTenantId())
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, invalidCredential)
+	}
+
+	// Constant-time comparison so response timing cannot be used to
+	// brute-force the shared secret one byte at a time. An empty
+	// configured secret always fails closed (see ServiceSharedSecret's
+	// doc comment) rather than matching an empty supplied value.
+	if s.ServiceSharedSecret == "" || req.GetSharedSecret() == "" ||
+		subtle.ConstantTimeCompare([]byte(req.GetSharedSecret()), []byte(s.ServiceSharedSecret)) != 1 {
+		return nil, status.Error(codes.Unauthenticated, invalidCredential)
+	}
+
+	exists, err := s.Tenants.TenantExists(ctx, tid)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "check tenant exists: %v", err)
+	}
+	if !exists {
+		return nil, status.Error(codes.Unauthenticated, invalidCredential)
+	}
+
+	caller := req.GetCallerService()
+	if caller == "" {
+		caller = "unknown-service"
+	}
+
+	token, expiresAt, err := s.Tokens.IssueToken(tid, "service:"+caller, []string{"service"})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "issue token: %v", err)
+	}
+
+	return &tenantidentityv1.IssueServiceTokenResponse{
+		Token:     token,
+		ExpiresAt: timestamppb.New(expiresAt),
+	}, nil
 }

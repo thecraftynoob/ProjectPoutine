@@ -39,6 +39,29 @@ spec:
                 configMapKeyRef:
                   name: ccaas-infra-config
                   key: NATS_URL
+            # JWT_PUBLIC_KEY_PATH: see the tenant-identity-public-key
+            # ConfigMap volume/volumeMount below -- read at startup via
+            # pkg/jwtauth.LoadVerifierFromFile, shared by this service's
+            # gRPC interceptor and its /ws Authorization header check
+            # (internal/wsserver).
+            - name: JWT_PUBLIC_KEY_PATH
+              value: "/etc/ccaas/jwt/public_key.pem"
+            # SERVICE_SHARED_SECRET: the shared credential this service
+            # supplies to Tenant & Identity's IssueServiceToken RPC --
+            # see deploy/k8s/service-credential.example.yaml.
+            - name: SERVICE_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-service-credential
+                  key: SERVICE_SHARED_SECRET
+            # TENANT_IDENTITY_GRPC_ADDR: where this service reaches
+            # Tenant & Identity's gRPC server to call IssueServiceToken.
+            - name: TENANT_IDENTITY_GRPC_ADDR
+              value: "tenant-identity-svc:50051"
+          volumeMounts:
+            - name: tenant-identity-public-key
+              mountPath: /etc/ccaas/jwt
+              readOnly: true
           livenessProbe:
             exec:
               command: ["grpc_health_probe", "-addr=:50055"]
@@ -49,3 +72,7 @@ spec:
               command: ["grpc_health_probe", "-addr=:50055"]
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: tenant-identity-public-key
+          configMap:
+            name: tenant-identity-public-key

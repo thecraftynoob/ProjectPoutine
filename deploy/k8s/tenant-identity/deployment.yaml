@@ -58,6 +58,16 @@ spec:
             # ConfigMap entry.
             - name: POSTGRES_DSN
               value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
+            # TENANT_IDENTITY_SERVICE_SHARED_SECRET: the credential
+            # IssueServiceToken checks every caller against -- see
+            # deploy/k8s/service-credential.example.yaml for the full
+            # scoping rationale (a narrow, documented stand-in for a real
+            # per-service identity scheme, not a hardened mTLS mesh).
+            - name: TENANT_IDENTITY_SERVICE_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-service-credential
+                  key: SERVICE_SHARED_SECRET
           livenessProbe:
             exec:
               command: ["grpc_health_probe", "-addr=:50051"]

@@ -5,48 +5,103 @@
 // IPC row; TASK_ROUTER_SPECIFICATION.md Section 3.5/6.3 for the delivery
 // contract this service relays).
 //
-// ============================================================================
-// AUTH IS A PLACEHOLDER. THIS IS NOT REAL AUTHENTICATION.
-// ============================================================================
-// The WebSocket upgrade endpoint in this package identifies the caller
-// using two UNSIGNED, UNVERIFIED query parameters:
+// # Authentication
 //
-//	GET /ws?tenant_id=<uuid>&agent_id=<string>
+// The WebSocket upgrade endpoint requires a real, signature-verified JWT
+// on every connection attempt, carried as a standard HTTP Authorization
+// header on the upgrade request:
 //
-// tenant_id must parse as a UUID and agent_id must be non-empty, or the
-// upgrade is rejected with HTTP 400 -- but neither value is authenticated
-// in any way. Any caller who can reach this endpoint can claim to be any
-// agent in any tenant simply by setting these query parameters. This is
-// acceptable ONLY because Tenant & Identity Management (architecture doc
-// Section 2.2) does not exist yet in this platform, so there is no JWT
-// issuer to validate against.
+//	GET /ws
+//	Authorization: Bearer <jwt>
 //
-// This MUST be replaced, before any real deployment, with real
-// authentication: an Authorization header bearing a JWT with a `tid`
-// claim (tenant ID) and an agent/subject claim, validated the way
-// architecture doc Section 1.1 describes for the API Gateway (Layer 1
-// enforcement) -- and this service, as an internal service, should also
-// apply Layer 2 re-validation per that same section rather than trusting
-// the Gateway blindly. Do not treat the current query-param scheme as
-// "auth that will be hardened later" -- it provides no security
-// whatsoever today.
-// ============================================================================
+// This replaces an earlier placeholder scheme that trusted unsigned
+// `?tenant_id=&agent_id=` query parameters -- see PROGRESS.md's history
+// for that scheme's known insecurity. tenant_id is derived exclusively
+// from the verified token's `tid` claim (never from client input, per
+// architecture doc Section 1.1 Layer 1) and agent_id is derived from the
+// verified token's `sub` (Subject) claim.
+//
+// # Agent identity: reconciling Task Router's Agent with Tenant &
+// Identity's User
+//
+// Task Router's `Agent` entity (proto/task-router/v1/task_router.proto)
+// and Tenant & Identity's `User` entity (proto/tenant-identity/v1/
+// tenant_identity.proto) are two separate, unrelated concepts in this
+// system today: an Agent is purely a routing-domain profile (status,
+// capacity, queues, skills) identified by an operator-chosen
+// `agent_id` string with NO reference to any User record, while a User is
+// purely an identity/auth-domain principal (username, bcrypt hash, RBAC
+// roles) identified by a server-generated UUID. Nothing in either
+// service's schema links the two today.
+//
+// This package resolves that tension the simplest way that is still
+// correct for this milestone's scope: it treats the JWT's `sub` claim
+// (the authenticated User's user_id) AS the agent_id used to register and
+// route WebSocket messages to this connection. This is deliberately a
+// pragmatic identity mapping, not a claim that the two entities are "the
+// same thing" architecturally:
+//   - It requires no schema or proto change to either service to ship
+//     this milestone.
+//   - It is directionally correct for the real-world shape of this
+//     system: a human agent logs into Tenant & Identity as a User, and
+//     that login is what proves who they are for the WebSocket
+//     connection they then open.
+//   - It does mean that, today, an operator provisioning a Task Router
+//     `Agent` profile and a Tenant & Identity `User` for the same human
+//     must use the SAME string as both the Agent's `agent_id` and the
+//     User's `user_id` for task-offer delivery (relay/envelope.go's
+//     agentId-based lookup) to reach the right WebSocket connection --
+//     there is no automatic reconciliation. A future milestone that
+//     formally unifies these two entities (e.g. Task Router's Agent
+//     gaining a user_id foreign key, or Tenant & Identity gaining an
+//     agent-role-specific profile) would replace this mapping with a
+//     real lookup; this is explicitly flagged as follow-up scope, not
+//     re-litigated here.
 package wsserver
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/coder/websocket"
-	"github.com/google/uuid"
+	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
 	"github.com/thecraftynoob/ProjectPoutine/services/agent-presence/internal/registry"
 )
+
+// bearerPrefix is the required prefix of the Authorization header value,
+// matched case-insensitively per RFC 6750 / HTTP convention -- mirrors
+// pkg/tenantctx's gRPC-side bearer parsing so both transports enforce an
+// identical wire contract.
+const bearerPrefix = "Bearer "
+
+// Authentication failure reasons, all surfaced as HTTP 401 (see
+// authenticate/ServeHTTP) -- 401 Unauthorized is the semantically correct
+// status for "no/invalid credentials presented," replacing this
+// endpoint's earlier placeholder scheme's use of 400 Bad Request for
+// malformed query parameters.
+var (
+	errMissingAuthHeader   = errors.New("missing Authorization header")
+	errMalformedAuthHeader = errors.New(`Authorization header must be "Bearer <token>"`)
+	errMissingSubjectClaim = errors.New("token has no subject (sub) claim to use as agent_id")
+)
+
+// invalidTokenError wraps a JWT verification failure (bad signature,
+// expired, malformed, ...) with a stable, non-leaky prefix for the HTTP
+// error body.
+type invalidTokenError struct{ err error }
+
+func (e invalidTokenError) Error() string { return fmt.Sprintf("invalid token: %v", e.err) }
+func (e invalidTokenError) Unwrap() error { return e.err }
 
 // Server is an http.Handler serving the WebSocket upgrade endpoint.
 type Server struct {
 	registry *registry.Registry
+	verifier *jwtauth.Verifier
 	logger   *slog.Logger
 
 	mu   sync.Mutex
@@ -55,10 +110,18 @@ type Server struct {
 
 // New constructs a Server backed by reg (the process's connection
 // Registry, shared with the NATS relay so delivered events reach
-// connections registered here).
-func New(reg *registry.Registry, logger *slog.Logger) *Server {
+// connections registered here) and verifier, used to validate the
+// Authorization header on every upgrade request. verifier must be
+// non-nil -- this is a security control and fails closed at construction
+// time (see cmd/main.go, which refuses to start rather than pass a nil
+// verifier here).
+func New(reg *registry.Registry, verifier *jwtauth.Verifier, logger *slog.Logger) *Server {
+	if verifier == nil {
+		panic("wsserver: New called with a nil verifier -- refusing to serve unauthenticated WebSocket connections")
+	}
 	return &Server{
 		registry: reg,
+		verifier: verifier,
 		logger:   logger,
 		conn:     make(map[*wsConnection]struct{}),
 	}
@@ -71,18 +134,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenantIDRaw := r.URL.Query().Get("tenant_id")
-	agentID := r.URL.Query().Get("agent_id")
-
-	tenantID, err := uuid.Parse(tenantIDRaw)
+	claims, err := s.authenticate(r)
 	if err != nil {
-		http.Error(w, "wsserver: tenant_id query parameter must be a valid UUID", http.StatusBadRequest)
+		http.Error(w, "wsserver: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
-	if agentID == "" {
-		http.Error(w, "wsserver: agent_id query parameter must be non-empty", http.StatusBadRequest)
-		return
-	}
+	tenantID := claims.TenantID.String()
+	agentID := claims.Subject
 
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -94,7 +152,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	wc := &wsConnection{
 		conn:     c,
-		tenantID: tenantID.String(),
+		tenantID: tenantID,
 		agentID:  agentID,
 	}
 
@@ -124,6 +182,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// connection can be unregistered. Any inbound data frame is
 	// discarded.
 	readLoop(r.Context(), c)
+}
+
+// authenticate validates the Authorization header on an upgrade request
+// and returns the verified claims. Returns an error (suitable for direct
+// inclusion in an HTTP 401 body) on any missing/malformed/invalid token.
+func (s *Server) authenticate(r *http.Request) (jwtauth.Claims, error) {
+	raw := r.Header.Get("Authorization")
+	if raw == "" {
+		return jwtauth.Claims{}, errMissingAuthHeader
+	}
+	if len(raw) <= len(bearerPrefix) || !strings.EqualFold(raw[:len(bearerPrefix)], bearerPrefix) {
+		return jwtauth.Claims{}, errMalformedAuthHeader
+	}
+	token := raw[len(bearerPrefix):]
+
+	claims, err := s.verifier.Verify(token)
+	if err != nil {
+		return jwtauth.Claims{}, invalidTokenError{err}
+	}
+	if claims.Subject == "" {
+		return jwtauth.Claims{}, errMissingSubjectClaim
+	}
+	return claims, nil
 }
 
 // trackConn adds/removes wc from the server's bookkeeping set, used only

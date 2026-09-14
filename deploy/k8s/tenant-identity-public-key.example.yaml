@@ -20,14 +20,36 @@
 # name is git-ignored, see .gitignore -- so a real deployment's public key
 # is never committed here as a fake "example"). NOT applied automatically.
 #
-# IMPORTANT: this ConfigMap is not consumed by any service's code yet.
-# Wiring pkg/tenantctx (or any other service) to actually mount this
-# ConfigMap and call pkg/jwtauth.Verifier for real request-time token
-# validation is an explicit follow-up milestone -- see
-# services/tenant-identity/README.md and this repo's top-level
-# CCAAS_ENTERPRISE_ARCHITECTURE.md Section 1.1 for the deferred-but-planned
-# JWT-consumer contract. This manifest exists now purely so the manual
-# distribution mechanism and its shape are settled ahead of that work.
+# OBSERVED CAVEAT (this milestone's live verification): on this
+# environment's Docker Desktop Kubernetes, `kubectl logs` for this
+# deployment's pod was observed to sometimes only surface the LAST log
+# line written before the gRPC server starts serving (the startup-banner
+# lines logged just before it were missing from `kubectl logs` output,
+# even with --timestamps and no tail limit) -- a log-capture quirk of
+# that specific local cluster, not a bug in this service's logging code
+# (confirmed: `docker run` on the same image against the same Postgres
+# instance reliably prints all four banner lines). If `kubectl logs`
+# appears to be missing the banner, a reliable fallback is running the
+# same image directly against the same POSTGRES_DSN via `docker run`
+# (LoadOrGenerate loads the already-persisted key rather than generating
+# a new one, so this prints the SAME key the cluster pod is actually
+# using) -- see this milestone's report for the exact command used.
+#
+# CONSUMED BY: every service in this repo except tenant-identity itself
+# (which verifies its own tokens using the in-process private key it
+# already holds -- see services/tenant-identity/cmd/main.go) and
+# api-gateway (which does not run pkg/tenantctx's interceptor at all,
+# since it is the edge that ORIGINATES tenant context from a validated
+# JWT rather than validating one from an internal caller -- see
+# architecture doc Section 1.1 Layer 1 vs Layer 2). Every other service's
+# deployment.yaml mounts this ConfigMap as a file (see each service's
+# deployment.yaml's `tenant-identity-public-key` volume/volumeMount) at
+# /etc/ccaas/jwt/public_key.pem, read at startup via
+# pkg/jwtauth.LoadVerifierFromFile and passed to
+# pkg/tenantctx.UnaryServerInterceptor/StreamServerInterceptor. A service
+# that cannot load a valid key refuses to start (fail closed on a
+# security control) rather than silently accepting unauthenticated
+# traffic.
 #
 # Key rotation is out of scope for this milestone (see
 # migrations/003_signing_keypair.sql): replacing this ConfigMap's value

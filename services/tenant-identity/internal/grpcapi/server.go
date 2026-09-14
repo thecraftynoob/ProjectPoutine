@@ -36,6 +36,14 @@ type IdentityServer struct {
 	Users   *pgstore.UserStore
 	Tokens  *authn.TokenIssuer
 	Logger  *slog.Logger
+
+	// ServiceSharedSecret is the shared credential IssueServiceToken
+	// checks callers against (see that RPC's doc comment in the proto for
+	// the full scoping rationale). Required for IssueServiceToken to ever
+	// succeed; an empty value causes every call to that RPC to be
+	// rejected, since an empty expected secret would otherwise make an
+	// empty-string caller-supplied secret match by accident.
+	ServiceSharedSecret string
 }
 
 func (s *IdentityServer) logger() *slog.Logger {

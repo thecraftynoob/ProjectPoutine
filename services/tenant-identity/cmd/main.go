@@ -71,6 +71,14 @@ type serviceConfig struct {
 	// see pkg/jwtauth.Signer's doc comment -- verification never checks
 	// it.
 	JWTIssuer string `env:"TENANT_IDENTITY_JWT_ISSUER" envDefault:"tenant-identity"`
+	// ServiceSharedSecret authenticates callers of IssueServiceToken (see
+	// that RPC's proto doc comment). Sourced from the same
+	// ccaas-service-credential K8s Secret every service reads to call
+	// IssueServiceToken -- see deploy/k8s/service-credential.example.yaml.
+	// Required: with no shared secret configured, IssueServiceToken
+	// rejects every call (fails closed) rather than silently accepting
+	// an empty credential.
+	ServiceSharedSecret string `env:"TENANT_IDENTITY_SERVICE_SHARED_SECRET,required"`
 }
 
 // tenantctxExemptMethods lists the tenantidentity.v1 RPCs that must be
@@ -86,6 +94,7 @@ var tenantctxExemptMethods = []string{
 	"/tenantidentity.v1.TenantService/ListTenants",
 	"/tenantidentity.v1.IdentityService/CreateUser",
 	"/tenantidentity.v1.IdentityService/Login",
+	"/tenantidentity.v1.IdentityService/IssueServiceToken",
 }
 
 func main() {
@@ -159,6 +168,16 @@ func main() {
 	signer := jwtauth.NewSigner(privateKey, cfg.JWTIssuer)
 	tokenIssuer := authn.NewTokenIssuer(signer, time.Duration(cfg.JWTTTLSeconds)*time.Second)
 
+	// This service both issues AND verifies its own tokens: Login/
+	// CreateUser/etc. are exempt from the interceptor (no context yet to
+	// verify), but GetUser/ListUsers are not, and this service is a gRPC
+	// client of itself for exactly zero calls today -- the verifier below
+	// exists purely so this service's own steady-state RPCs (GetUser,
+	// ListUsers) enforce real JWT verification the same as every other
+	// service, using the keypair it already holds in-process rather than
+	// reading back its own public key from the ConfigMap it publishes.
+	verifier := jwtauth.NewVerifier(&privateKey.PublicKey)
+
 	// --- gRPC server ---
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -167,8 +186,8 @@ func main() {
 	}
 
 	server := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor(tenantctxExemptMethods...)),
-		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor()),
+		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor(verifier, tenantctxExemptMethods...)),
+		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor(verifier, tenantctxExemptMethods...)),
 	)
 
 	tenantServer := &grpcapi.TenantServer{
@@ -176,10 +195,11 @@ func main() {
 		Logger:  logger,
 	}
 	identityServer := &grpcapi.IdentityServer{
-		Tenants: tenantStore,
-		Users:   userStore,
-		Tokens:  tokenIssuer,
-		Logger:  logger,
+		Tenants:             tenantStore,
+		Users:               userStore,
+		Tokens:              tokenIssuer,
+		Logger:              logger,
+		ServiceSharedSecret: cfg.ServiceSharedSecret,
 	}
 	tenantidentityv1.RegisterTenantServiceServer(server, tenantServer)
 	tenantidentityv1.RegisterIdentityServiceServer(server, identityServer)

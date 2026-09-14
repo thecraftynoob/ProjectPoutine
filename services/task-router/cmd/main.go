@@ -34,6 +34,7 @@ import (
 	"github.com/thecraftynoob/ProjectPoutine/pkg/config"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/eventbus"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/health"
+	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/pgtenant"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/tenantctx"
 	"github.com/thecraftynoob/ProjectPoutine/services/task-router/internal/events"
@@ -75,6 +76,23 @@ type serviceConfig struct {
 	// tenant is an equally valid path, since the registry is just an
 	// open allow-list.
 	BootstrapTenantID string `env:"TASK_ROUTER_BOOTSTRAP_TENANT_ID"`
+	// JWTPublicKeyPath points at the PEM-encoded ECDSA public key Tenant &
+	// Identity Management issues tokens with, mounted from the
+	// tenant-identity-public-key ConfigMap (see
+	// deploy/k8s/tenant-identity-public-key.example.yaml and
+	// deploy/k8s/task-router/deployment.yaml). Required: this service
+	// cannot verify any caller's JWT, and therefore cannot safely accept
+	// any non-exempt RPC, without it.
+	JWTPublicKeyPath string `env:"JWT_PUBLIC_KEY_PATH,required"`
+	// TenantIdentityGRPCAddr and ServiceSharedSecret are accepted for
+	// parity with every other service's deployment.yaml and forward
+	// compatibility, but this service has no steady-state call to make
+	// into another service's gRPC API today -- pkg/svcauth is what a
+	// future call site would use to obtain and attach a service token
+	// via Tenant & Identity's IssueServiceToken RPC, following the same
+	// pattern this milestone's live verification exercises directly.
+	TenantIdentityGRPCAddr string `env:"TENANT_IDENTITY_GRPC_ADDR"`
+	ServiceSharedSecret    string `env:"SERVICE_SHARED_SECRET"`
 }
 
 func main() {
@@ -148,6 +166,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// --- JWT verification (Layer 2 enforcement, architecture doc Section
+	// 1.1) ---
+	verifier, err := jwtauth.LoadVerifierFromFile(cfg.JWTPublicKeyPath)
+	if err != nil {
+		logger.Error("failed to load JWT verifier -- refusing to start without one (fail closed)", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	if cfg.TenantIdentityGRPCAddr != "" && cfg.ServiceSharedSecret != "" {
+		logger.Info("service-to-service auth configured", slog.String("tenant_identity_addr", cfg.TenantIdentityGRPCAddr))
+	}
+
 	// --- gRPC server ---
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
@@ -156,8 +186,8 @@ func main() {
 	}
 
 	server := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor()),
+		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor(verifier)),
+		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor(verifier)),
 	)
 
 	taskRouterServer := &grpcapi.TaskRouterServer{

@@ -72,14 +72,15 @@ const (
 //     service's steady-state RPCs.
 //
 // TENANTCTX EXEMPTION: CreateTenant, GetTenant, ListTenants, CreateUser,
-// and Login are exempt from pkg/tenantctx's interceptor (see
-// services/tenant-identity/cmd/main.go's exemption list) -- each is
-// reachable with no established tenant context, by design (see above).
+// Login, and IssueServiceToken are exempt from pkg/tenantctx's interceptor
+// (see services/tenant-identity/cmd/main.go's exemption list) -- each is
+// reachable with no established tenant context, by design (see above, and
+// see IssueServiceToken's own doc comment for why it joins this list).
 // GetUser and ListUsers are NOT exempt: they operate within an already-
 // established tenant context exactly like every other service's
-// steady-state RPCs, so they go through the same x-tenant-id metadata
-// interceptor as Task Router's/Agent Presence's RPCs and require valid
-// x-tenant-id metadata to be present on the call.
+// steady-state RPCs, so they go through the same verified-JWT interceptor
+// as Task Router's/Agent Presence's RPCs and require a valid bearer token
+// on the call.
 type TenantServiceClient interface {
 	// CreateTenant registers a brand new tenant in the platform registry.
 	// This is how a caller obtains a real tenant_id in the first place --
@@ -179,14 +180,15 @@ func (c *tenantServiceClient) ListTenants(ctx context.Context, in *ListTenantsRe
 //     service's steady-state RPCs.
 //
 // TENANTCTX EXEMPTION: CreateTenant, GetTenant, ListTenants, CreateUser,
-// and Login are exempt from pkg/tenantctx's interceptor (see
-// services/tenant-identity/cmd/main.go's exemption list) -- each is
-// reachable with no established tenant context, by design (see above).
+// Login, and IssueServiceToken are exempt from pkg/tenantctx's interceptor
+// (see services/tenant-identity/cmd/main.go's exemption list) -- each is
+// reachable with no established tenant context, by design (see above, and
+// see IssueServiceToken's own doc comment for why it joins this list).
 // GetUser and ListUsers are NOT exempt: they operate within an already-
 // established tenant context exactly like every other service's
-// steady-state RPCs, so they go through the same x-tenant-id metadata
-// interceptor as Task Router's/Agent Presence's RPCs and require valid
-// x-tenant-id metadata to be present on the call.
+// steady-state RPCs, so they go through the same verified-JWT interceptor
+// as Task Router's/Agent Presence's RPCs and require a valid bearer token
+// on the call.
 type TenantServiceServer interface {
 	// CreateTenant registers a brand new tenant in the platform registry.
 	// This is how a caller obtains a real tenant_id in the first place --
@@ -317,10 +319,11 @@ var TenantService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	IdentityService_CreateUser_FullMethodName = "/tenantidentity.v1.IdentityService/CreateUser"
-	IdentityService_Login_FullMethodName      = "/tenantidentity.v1.IdentityService/Login"
-	IdentityService_GetUser_FullMethodName    = "/tenantidentity.v1.IdentityService/GetUser"
-	IdentityService_ListUsers_FullMethodName  = "/tenantidentity.v1.IdentityService/ListUsers"
+	IdentityService_CreateUser_FullMethodName        = "/tenantidentity.v1.IdentityService/CreateUser"
+	IdentityService_Login_FullMethodName             = "/tenantidentity.v1.IdentityService/Login"
+	IdentityService_GetUser_FullMethodName           = "/tenantidentity.v1.IdentityService/GetUser"
+	IdentityService_ListUsers_FullMethodName         = "/tenantidentity.v1.IdentityService/ListUsers"
+	IdentityService_IssueServiceToken_FullMethodName = "/tenantidentity.v1.IdentityService/IssueServiceToken"
 )
 
 // IdentityServiceClient is the client API for IdentityService service.
@@ -349,6 +352,35 @@ type IdentityServiceClient interface {
 	// ListUsers enumerates every user within the caller's tenant context
 	// (x-tenant-id metadata).
 	ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error)
+	// IssueServiceToken mints a short-lived JWT for SERVICE-to-service calls
+	// (as opposed to Login's end-user, username+password path). This is
+	// explicitly a narrow, minimally-scoped mechanism -- NOT a hardened
+	// zero-trust/mTLS service mesh (that is a separate, larger
+	// infrastructure milestone; see CCAAS_ENTERPRISE_ARCHITECTURE.md
+	// Section 1.1 Layer 2's "separately authenticated via mTLS + a distinct
+	// admin scope" language, which this deliberately does NOT attempt to
+	// fully satisfy yet). Authentication here is a single shared credential
+	// (see shared_secret below) every service reads from the same
+	// Kubernetes Secret -- "good enough to retire the blind-trust
+	// placeholder and establish the real bearer-token pattern," not a
+	// hardened per-service identity scheme.
+	//
+	// The caller supplies the tenant it wants to act within (a service
+	// calling another service is always doing so on behalf of some
+	// tenant-scoped operation -- there is no "no tenant" service call in
+	// this system) plus the shared secret. On success, returns a JWT shaped
+	// identically to Login's (same `tid`/`sub`/`roles` claim set consumed by
+	// pkg/tenantctx and pkg/jwtauth) so the verifying interceptor never
+	// needs to distinguish "user-originated" from "service-originated"
+	// calls -- both are just valid JWTs. The `sub` claim is set to
+	// "service:<caller_name>" and `roles` includes "service" so a future
+	// audit/authorization decision CAN distinguish service tokens from user
+	// tokens if ever needed, without requiring it to today.
+	//
+	// Exempt from pkg/tenantctx's interceptor (see TENANTCTX EXEMPTION note
+	// above): this is itself how a caller obtains a token, so it cannot
+	// require one to already exist.
+	IssueServiceToken(ctx context.Context, in *IssueServiceTokenRequest, opts ...grpc.CallOption) (*IssueServiceTokenResponse, error)
 }
 
 type identityServiceClient struct {
@@ -399,6 +431,16 @@ func (c *identityServiceClient) ListUsers(ctx context.Context, in *ListUsersRequ
 	return out, nil
 }
 
+func (c *identityServiceClient) IssueServiceToken(ctx context.Context, in *IssueServiceTokenRequest, opts ...grpc.CallOption) (*IssueServiceTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssueServiceTokenResponse)
+	err := c.cc.Invoke(ctx, IdentityService_IssueServiceToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IdentityServiceServer is the server API for IdentityService service.
 // All implementations must embed UnimplementedIdentityServiceServer
 // for forward compatibility.
@@ -425,6 +467,35 @@ type IdentityServiceServer interface {
 	// ListUsers enumerates every user within the caller's tenant context
 	// (x-tenant-id metadata).
 	ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error)
+	// IssueServiceToken mints a short-lived JWT for SERVICE-to-service calls
+	// (as opposed to Login's end-user, username+password path). This is
+	// explicitly a narrow, minimally-scoped mechanism -- NOT a hardened
+	// zero-trust/mTLS service mesh (that is a separate, larger
+	// infrastructure milestone; see CCAAS_ENTERPRISE_ARCHITECTURE.md
+	// Section 1.1 Layer 2's "separately authenticated via mTLS + a distinct
+	// admin scope" language, which this deliberately does NOT attempt to
+	// fully satisfy yet). Authentication here is a single shared credential
+	// (see shared_secret below) every service reads from the same
+	// Kubernetes Secret -- "good enough to retire the blind-trust
+	// placeholder and establish the real bearer-token pattern," not a
+	// hardened per-service identity scheme.
+	//
+	// The caller supplies the tenant it wants to act within (a service
+	// calling another service is always doing so on behalf of some
+	// tenant-scoped operation -- there is no "no tenant" service call in
+	// this system) plus the shared secret. On success, returns a JWT shaped
+	// identically to Login's (same `tid`/`sub`/`roles` claim set consumed by
+	// pkg/tenantctx and pkg/jwtauth) so the verifying interceptor never
+	// needs to distinguish "user-originated" from "service-originated"
+	// calls -- both are just valid JWTs. The `sub` claim is set to
+	// "service:<caller_name>" and `roles` includes "service" so a future
+	// audit/authorization decision CAN distinguish service tokens from user
+	// tokens if ever needed, without requiring it to today.
+	//
+	// Exempt from pkg/tenantctx's interceptor (see TENANTCTX EXEMPTION note
+	// above): this is itself how a caller obtains a token, so it cannot
+	// require one to already exist.
+	IssueServiceToken(context.Context, *IssueServiceTokenRequest) (*IssueServiceTokenResponse, error)
 	mustEmbedUnimplementedIdentityServiceServer()
 }
 
@@ -446,6 +517,9 @@ func (UnimplementedIdentityServiceServer) GetUser(context.Context, *GetUserReque
 }
 func (UnimplementedIdentityServiceServer) ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListUsers not implemented")
+}
+func (UnimplementedIdentityServiceServer) IssueServiceToken(context.Context, *IssueServiceTokenRequest) (*IssueServiceTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method IssueServiceToken not implemented")
 }
 func (UnimplementedIdentityServiceServer) mustEmbedUnimplementedIdentityServiceServer() {}
 func (UnimplementedIdentityServiceServer) testEmbeddedByValue()                         {}
@@ -540,6 +614,24 @@ func _IdentityService_ListUsers_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IdentityService_IssueServiceToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IssueServiceTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IdentityServiceServer).IssueServiceToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IdentityService_IssueServiceToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IdentityServiceServer).IssueServiceToken(ctx, req.(*IssueServiceTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IdentityService_ServiceDesc is the grpc.ServiceDesc for IdentityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -562,6 +654,10 @@ var IdentityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListUsers",
 			Handler:    _IdentityService_ListUsers_Handler,
+		},
+		{
+			MethodName: "IssueServiceToken",
+			Handler:    _IdentityService_IssueServiceToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

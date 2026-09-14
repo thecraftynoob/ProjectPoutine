@@ -19,6 +19,7 @@ import (
 
 	"github.com/thecraftynoob/ProjectPoutine/pkg/config"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/health"
+	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/tenantctx"
 	"google.golang.org/grpc"
 )
@@ -26,6 +27,12 @@ import (
 type serviceConfig struct {
 	GRPCPort    string `env:"BACKGROUND_WORKER_POOL_GRPC_PORT" envDefault:"50058"`
 	PostgresDSN string `env:"POSTGRES_DSN"`
+	// JWTPublicKeyPath points at the PEM-encoded ECDSA public key Tenant &
+	// Identity Management issues tokens with (see
+	// deploy/k8s/tenant-identity-public-key.example.yaml). Required even
+	// for this scaffold: the tenant-context interceptor is wired in for
+	// when real RPCs land, and it fails closed without a verifier.
+	JWTPublicKeyPath string `env:"JWT_PUBLIC_KEY_PATH,required"`
 }
 
 func main() {
@@ -38,6 +45,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	verifier, err := jwtauth.LoadVerifierFromFile(cfg.JWTPublicKeyPath)
+	if err != nil {
+		logger.Error("failed to load JWT verifier -- refusing to start without one (fail closed)", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logger.Error("failed to listen", slog.Any("error", err))
@@ -45,8 +58,8 @@ func main() {
 	}
 
 	server := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor()),
+		grpc.ChainUnaryInterceptor(tenantctx.UnaryServerInterceptor(verifier)),
+		grpc.ChainStreamInterceptor(tenantctx.StreamServerInterceptor(verifier)),
 	)
 	health.Register(server)
 

@@ -22,41 +22,66 @@ own.
 
 ---
 
-## ⚠️ WebSocket auth is a placeholder -- NOT real authentication
+## WebSocket authentication
 
-The `/ws` upgrade endpoint identifies the connecting caller using two
-**unsigned, unverified** query parameters:
+The `/ws` upgrade endpoint requires a real, signature-verified JWT on
+every connection attempt, carried as a standard HTTP `Authorization`
+header on the upgrade request:
 
 ```
-GET /ws?tenant_id=<uuid>&agent_id=<string>
+GET /ws
+Authorization: Bearer <jwt>
 ```
 
-- `tenant_id` must parse as a UUID, or the upgrade is rejected with
-  **HTTP 400**.
-- `agent_id` must be non-empty, or the upgrade is rejected with **HTTP
-  400**.
-- Otherwise, **any caller who can reach this endpoint can claim to be any
-  agent in any tenant** simply by setting these query parameters. There
-  is no signature, no token, no verification of any kind.
+- The token must verify against Tenant & Identity Management's published
+  ECDSA P-256 public key (see `pkg/jwtauth`, and
+  `deploy/k8s/tenant-identity-public-key.example.yaml` for how this
+  service obtains that key) or the upgrade is rejected with **HTTP 401**.
+- `tenant_id` is derived exclusively from the verified token's `tid`
+  claim -- never from client-supplied input, per architecture doc Section
+  1.1 Layer 1.
+- `agent_id` is derived from the verified token's `sub` (Subject) claim.
+  See "Agent identity" below for the reasoning behind this mapping.
+- A missing `Authorization` header, a malformed header (not
+  `Bearer <token>`), an invalid signature, an expired token, or a token
+  with no `sub` claim are all rejected with **HTTP 401** -- the
+  semantically correct status for "unauthenticated," replacing this
+  endpoint's earlier placeholder scheme's use of 400 (which was really
+  reporting "malformed query parameters," a different failure class).
 
-This is acceptable **only** because Tenant & Identity Management
-(architecture doc Section 2.2) does not exist yet in this platform --
-there is no JWT issuer to validate against today.
+This is Layer 2 (service-level) enforcement per architecture doc Section
+1.1: this service independently verifies the token itself rather than
+trusting an upstream API Gateway's Layer 1 resolution blindly, matching
+the pattern `pkg/tenantctx` already applies to this service's gRPC
+surface.
 
-**This must be replaced before any real deployment** with:
-- An `Authorization` header bearing a JWT with a `tid` claim (tenant ID)
-  and an agent/subject claim.
-- Validation the way architecture doc Section 1.1 describes for the API
-  Gateway (Layer 1 enforcement: resolve `tenant_id` from the
-  authenticated principal, never from client-supplied input).
-- Layer 2 re-validation inside this service itself (per that same
-  section), rather than trusting the Gateway blindly, matching the
-  pattern `pkg/tenantctx` already applies to this service's gRPC surface.
+### Agent identity: reconciling Task Router's Agent with Tenant &
+Identity's User
 
-Do not treat the current query-param scheme as "auth that will be
-hardened later" -- it provides **no security whatsoever** today. This
-warning is intentionally repeated as a doc comment at the top of
-`internal/wsserver/wsserver.go`.
+Task Router's `Agent` entity and Tenant & Identity's `User` entity are two
+separate, unrelated concepts in this system today: an Agent is purely a
+routing-domain profile (status, capacity, queues, skills) identified by an
+operator-chosen `agent_id` string, while a User is purely an
+identity/auth-domain principal (username, bcrypt hash, RBAC roles)
+identified by a server-generated UUID. Nothing in either service's schema
+links the two.
+
+This service resolves that tension the simplest way that is still correct
+for this milestone's scope: **the JWT's `sub` claim (the authenticated
+User's `user_id`) is treated as the `agent_id`** used to register and
+route WebSocket messages to this connection. This requires no schema
+change to either service, and is directionally correct (a human agent
+logs into Tenant & Identity as a User, and that login is what proves who
+they are for the WebSocket connection they open) -- but it does mean an
+operator provisioning both a Task Router `Agent` profile and a Tenant &
+Identity `User` for the same human must use the **same string** for the
+Agent's `agent_id` and the User's `user_id`, or task-offer delivery
+(which looks connections up by `agent_id`) will not reach them. There is
+no automatic reconciliation today. A future milestone that formally
+unifies these two entities would replace this mapping with a real lookup;
+this is flagged as follow-up scope, not solved here. See
+`internal/wsserver/wsserver.go`'s package doc comment for the same
+reasoning inline with the code.
 
 ---
 
@@ -65,7 +90,8 @@ warning is intentionally repeated as a doc comment at the top of
 ### Connecting
 
 ```
-GET /ws?tenant_id=<uuid>&agent_id=<string>
+GET /ws
+Authorization: Bearer <jwt>
 ```
 
 On success, the HTTP connection is upgraded to a WebSocket. The server
@@ -184,6 +210,7 @@ design rationale.
 | `REDIS_ADDR` | `localhost:6379` | Redis address (cross-replica fan-out transport) |
 | `AGENT_PRESENCE_REDIS_DB` | `0` | Redis logical DB index |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL (consumes Task Router's event stream) |
+| `JWT_PUBLIC_KEY_PATH` | *(required)* | Path to the PEM-encoded ECDSA public key used to verify both gRPC bearer tokens and `/ws` Authorization headers -- see `deploy/k8s/tenant-identity-public-key.example.yaml` |
 
 Port `8085` was chosen as a free port in this repo's port range (gRPC
 services occupy `50051`-`5005x`; HTTP/WS services elsewhere in the
@@ -229,11 +256,13 @@ RPC in the current scope needs it.
   confirms `SubscribeEphemeral` consumers don't collide with a durable,
   competing-consumer `Subscribe` group on the same stream/filter.
 - `internal/wsserver`: `httptest.Server` + `github.com/coder/websocket`
-  client -- valid/invalid query parameter upgrade behavior (400 on bad
-  `tenant_id`, missing `agent_id`, missing `tenant_id`), registration/
-  unregistration lifecycle on connect/disconnect, actual message delivery
-  over a real WebSocket connection, and graceful-shutdown connection
-  draining.
+  client -- valid/invalid Authorization header upgrade behavior (401 on
+  missing header, malformed header, wrong-key signature, expired token,
+  malformed token), a nil-verifier construction panic (fail-closed),
+  registration/unregistration lifecycle on connect/disconnect with
+  tenant_id/agent_id correctly derived from verified claims, actual
+  message delivery over a real WebSocket connection, and graceful-
+  shutdown connection draining.
 - End-to-end live smoke test: see the milestone's final report for the
   actual run performed (real `agent-presence` + real `task-router`, a
   real WebSocket client, a real Task Router gRPC call producing a
@@ -241,8 +270,10 @@ RPC in the current scope needs it.
 
 ## Deferred scope
 
-- **Real JWT-based authentication** for the `/ws` endpoint -- the
-  single biggest deferred item. See the warning section above.
+- **Formal Task Router Agent / Tenant & Identity User reconciliation** --
+  today the `sub` claim is used directly as `agent_id`, per "Agent
+  identity" above; a real foreign-key-style link between the two entities
+  is follow-up scope.
 - **Redis-backed presence keys with TTL heartbeats** (the other half of
   architecture doc Section 2.2's Redis dependency line) -- e.g. a
   queryable "is agent X online anywhere" key with a heartbeat-refreshed
