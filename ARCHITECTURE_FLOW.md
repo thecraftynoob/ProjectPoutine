@@ -5,9 +5,13 @@ service, API endpoint, WebSocket gateway, or Pub/Sub event is created,
 changed, or removed, update this file in the same change. Do not let it
 drift from the code.
 
-**Last updated:** 2026-09-13 (API Gateway built: REST routing via
-grpc-gateway fronting Task Router + Tenant & Identity, end-user JWT
-validation, WebSocket ticket + proxying for Agent Desktop)
+**Last updated:** 2026-09-14 (Digital Channels Gateway's first real
+milestone built: inbound `POST /webhooks/chat/{tenant_id}` webhook,
+normalizing one generic chat message shape into a Task Router
+`EnqueueTask` call via `pkg/svcauth`. Previously: 2026-09-13, API Gateway
+built — REST routing via grpc-gateway fronting Task Router + Tenant &
+Identity, end-user JWT validation, WebSocket ticket + proxying for Agent
+Desktop)
 
 ---
 
@@ -17,6 +21,7 @@ validation, WebSocket ticket + proxying for Agent Desktop)
 |---|---|---|---|
 | **API Gateway** | **Task Router** | `TaskRouterService` + `TaskRouterAdminService` (`proto/task-router/v1`) | Every REST request grpc-gateway routes to one of these RPCs (see §1.1 below for the full route table) is translated to a real gRPC call against `task-router-svc:50054`, with the caller's bearer token forwarded as `authorization` metadata. |
 | **API Gateway** | **Tenant & Identity Management** | `IdentityService` / `TenantService` (`proto/tenant-identity/v1`) | Same pattern, against `tenant-identity-svc:50051`. `IssueServiceToken` is deliberately NOT exposed via REST (no `google.api.http` annotation on that RPC) and is never called by API Gateway — it is service-to-service only. |
+| **Digital Channels Gateway** | **Task Router** | `TaskRouterService.EnqueueTask` (`proto/task-router/v1`) | Triggered by an inbound webhook request (see §4.2 below) — normalizes the webhook body into an `EnqueueTaskRequest` (fixed `task_type: "chat"`, `queue_id` mapped straight through from the webhook body, `required_attributes` mapped from the webhook's optional `attributes` map) and calls Task Router at `task-router-svc:50054`. Authenticated via `pkg/svcauth`: Digital Channels Gateway mints a service JWT scoped to the webhook path's `tenant_id` by calling Tenant & Identity's `IssueServiceToken` (`tenant-identity-svc:50051`, using `SERVICE_SHARED_SECRET` — same shared-credential mechanism task-router and agent-presence already use, see `deploy/k8s/service-credential.example.yaml`), then attaches it as `authorization: Bearer <token>` metadata. Unlike task-router's/agent-presence's existing `svcauth` usage (one fixed tenant baked in at process start), this is genuinely per-request tenant scoping — see `services/digital-channels-gateway/internal/webhookapi/taskrouterclient.go`'s `TenantScopedTaskRouterClient` doc comment for the resulting per-tenant `TokenSource` cache and its explicitly-flagged unbounded-map tradeoff. |
 | *(external test clients only, direct)* | **Task Router** / **Tenant & Identity** | same as above | Both services remain directly gRPC-dialable in this dev topology (no mTLS/network policy blocking it yet) for throwaway smoke-test clients — API Gateway is the intended production entry point, not the only way to reach them today. |
 | *(planned, not built)* | **Agent & Presence Service** | `PresenceService` (`proto/presence/v1`) | The service definition is intentionally empty today (`service PresenceService {}`) — its original `GetAvailableAgents` RPC was removed because Task Router already owns all agent routing state and never needed to call it. Kept as a stable package for a future RPC (e.g. "is agent X currently connected"). |
 
@@ -160,6 +165,7 @@ above) when adding new inter-service communication.
 | Agent Desktop, native/non-browser client | **Agent & Presence Service** | `GET /ws` WebSocket upgrade, direct | `Authorization: Bearer <jwt>` HTTP header on the upgrade request (original path, unchanged). `tenant_id` ← JWT `tid` claim, `agent_id` ← JWT `sub` claim (a documented pragmatic stand-in — see `services/agent-presence/internal/wsserver/wsserver.go`'s doc comment for the Task-Router-Agent-vs-Tenant-Identity-User reconciliation gap). Delivers a JSON envelope per forwarded event: `{"type": "...", "agentId": "...", "payload": {...}}`. Task Router's `Agent` entity now has an optional `user_id` field (`proto/task-router/v1/task_router.proto`) recording which User operates it — purely informational today, not consulted by this mapping; see that proto message's doc comment. |
 | Agent Desktop, browser client | **API Gateway** → proxied to **Agent & Presence Service** | `GET /ws?ticket=<jwt>` WebSocket upgrade, proxied through API Gateway (`internal/wsproxy`) | Short-lived (default 45s) single-purpose ws-ticket, obtained from `POST /v1/ws-ticket` (itself requiring a normal session bearer token) and signed by API Gateway's OWN dedicated ECDSA key (`internal/wsticket`) — deliberately separate from Tenant & Identity's session key, since API Gateway never holds that private key. See §4.1 below for the full flow and design rationale. |
 | Any external caller | **Tenant & Identity Management** | gRPC (direct) or REST (via API Gateway, §1.1) | `CreateTenant`, `Login`, `IssueServiceToken` (and a few others — see the proto's exempt-method doc comment) are exempt from `pkg/tenantctx`'s bearer-token requirement, since they're how a caller first obtains a tenant/token context. Every other RPC on every service requires a valid bearer JWT. |
+| Channel provider (e.g. a chat/SMS platform's webhook caller) | **Digital Channels Gateway** | `POST /webhooks/chat/{tenant_id}` (HTTP/JSON, direct — NOT via API Gateway) | **No signature/secret verification, no bearer token** — `tenant_id` comes solely from the URL path. A deliberate, explicitly-scoped tradeoff for this milestone, not an oversight — see §4.2 below and `services/digital-channels-gateway/internal/webhookapi`'s `ServeHTTP` doc comment. Different trust boundary than every other row in this table: webhooks are unauthenticated by nature (no provider account exists yet to hold a shared secret), so this endpoint is reached directly, not fronted by API Gateway's JWT-gated REST surface. |
 
 ### 4.1 WebSocket ticket flow (browser Agent Desktop clients)
 
@@ -213,6 +219,50 @@ client that CAN set custom headers (native/server-side clients, test
 harnesses) — the two paths coexist, sharing one claims-resolution helper
 (`internal/wsserver.ResolveClaims`) so neither duplicates the
 tenant/agent-identity mapping logic.
+
+### 4.2 Inbound chat webhook (Digital Channels Gateway)
+
+**Scope (deliberately narrow — this milestone's build):** inbound only,
+one generic "chat" channel shape, ending at a successfully enqueued Task
+Router `Task`. No outbound/agent-reply delivery back to the channel, no
+Postgres persistence of the message/session (architecture doc Section 2.2
+explicitly defers message/thread persistence to future async workers, not
+inline), no real per-provider (Twilio, etc.) integration.
+
+1. A channel provider (or, today, a test caller standing in for one)
+   `POST`s to `/webhooks/chat/{tenant_id}` — `tenant_id` is a URL path
+   segment, not derived from a JWT, because a webhook has no bearer token
+   to derive it from. This mirrors how real multi-tenant webhook
+   provisioning works in practice (e.g. Twilio configured with a
+   per-tenant callback URL) — each tenant gets its own webhook URL.
+2. Body shape: `{"session_id", "from", "text", "queue_id",
+   "attributes"}` — see `services/digital-channels-gateway/internal/webhookapi.InboundChatMessage`.
+   `session_id`/`from`/`text`/`queue_id` are required (400 with a JSON
+   error body if any is missing); `queue_id` must reference a queue that
+   already exists in the target tenant's Task Router Queue registry (Task
+   Router's `EnqueueTask` rejects it otherwise, mapped to 400 — see
+   below). `attributes` is optional and maps into Task Router's
+   `AttributeValue` oneof.
+3. **No signature/secret verification on this endpoint** — an explicit,
+   documented scope decision for this milestone (no real provider account
+   exists yet to hold a shared secret against), not an oversight. See
+   `internal/webhookapi`'s `ServeHTTP` doc comment for the full tradeoff
+   write-up (mirroring how `services/api-gateway/internal/wsticket`
+   documents its own short-TTL-not-single-use tradeoff instead of
+   silently shipping it). **A production build MUST add per-tenant
+   webhook signature verification before this endpoint faces a real
+   untrusted provider** — today, anyone who discovers or guesses a
+   tenant_id can enqueue tasks into that tenant's queues.
+4. Digital Channels Gateway normalizes the body into an `EnqueueTaskRequest`
+   (fixed `task_type: "chat"`) and calls Task Router's `EnqueueTask` as a
+   service via `pkg/svcauth` — see §1's new Digital Channels Gateway →
+   Task Router row above for the full auth mechanism.
+5. On success: `201` with the created Task (`task_id`, `queue_id`,
+   `task_type`, `status`) as JSON. On failure: Task Router's gRPC error is
+   mapped to `400` (InvalidArgument/AlreadyExists — e.g. queue doesn't
+   exist) or `502` (anything else, e.g. Internal/Unavailable) with a
+   generic client-safe message; the real gRPC error is always logged
+   server-side via `slog`, never leaked verbatim to the webhook caller.
 
 ---
 

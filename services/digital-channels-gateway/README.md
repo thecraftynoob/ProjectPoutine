@@ -8,6 +8,14 @@ delivery (agent replies) back to the originating channel provider
 
 **State:** Stateless.
 
-**Status:** scaffold only. gRPC server with health check and tenant-context
-interceptors wired; no channel-provider integrations, domain RPCs, or
-Postgres/NATS connections yet.
+**Status:** first real domain milestone built. `POST
+/webhooks/chat/{tenant_id}` accepts one generic inbound "chat" channel
+shape and calls Task Router's `EnqueueTask` RPC as a service (via
+`pkg/svcauth`), ending at a successfully enqueued Task -- see
+`internal/webhookapi`. Inbound only: no outbound/agent-reply delivery, no
+Postgres persistence of messages/threads (explicitly deferred to a future
+async-worker milestone), no webhook signature verification (explicitly
+deferred -- see `internal/webhookapi`'s `ServeHTTP` doc comment for that
+tradeoff), and no real per-provider (Twilio, etc.) integration yet. The
+scaffold's gRPC server (health check + tenant-context interceptors) is
+unchanged and still runs alongside the new HTTP server.

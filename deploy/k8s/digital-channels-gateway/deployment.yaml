@@ -22,15 +22,48 @@ spec:
           ports:
             - containerPort: 50053
               name: grpc
+            - containerPort: 8086
+              name: http
           env:
             - name: DIGITAL_CHANNELS_GATEWAY_GRPC_PORT
               value: "50053"
+            # DIGITAL_CHANNELS_GATEWAY_HTTP_ADDR: the inbound webhook HTTP
+            # server (POST /webhooks/chat/{tenant_id}, see
+            # internal/webhookapi) -- this service's real external surface
+            # as of this milestone.
+            - name: DIGITAL_CHANNELS_GATEWAY_HTTP_ADDR
+              value: ":8086"
             # JWT_PUBLIC_KEY_PATH: see the tenant-identity-public-key
             # ConfigMap volume/volumeMount below -- required for
             # pkg/tenantctx's interceptor to verify any caller's bearer
-            # token (fails closed / refuses to start without it).
+            # token (fails closed / refuses to start without it). The
+            # webhook HTTP surface itself does NOT use this -- see
+            # internal/webhookapi's ServeHTTP doc comment for that
+            # deliberate, documented tradeoff.
             - name: JWT_PUBLIC_KEY_PATH
               value: "/etc/ccaas/jwt/public_key.pem"
+            # SERVICE_SHARED_SECRET: the shared credential this service
+            # supplies to Tenant & Identity's IssueServiceToken RPC when
+            # minting a tenant-scoped service token to call Task Router's
+            # EnqueueTask on the webhook path (see
+            # deploy/k8s/service-credential.example.yaml for the full
+            # scoping rationale -- a narrow, documented stand-in for a
+            # real per-service identity scheme, not a hardened mesh).
+            - name: SERVICE_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-service-credential
+                  key: SERVICE_SHARED_SECRET
+            # TASK_ROUTER_GRPC_ADDR: where this service reaches Task
+            # Router's gRPC server to call EnqueueTask. In-cluster DNS
+            # name for the task-router Service (see
+            # deploy/k8s/task-router/service.yaml).
+            - name: TASK_ROUTER_GRPC_ADDR
+              value: "task-router-svc:50054"
+            # TENANT_IDENTITY_GRPC_ADDR: where this service reaches Tenant
+            # & Identity's gRPC server to call IssueServiceToken.
+            - name: TENANT_IDENTITY_GRPC_ADDR
+              value: "tenant-identity-svc:50051"
           volumeMounts:
             - name: tenant-identity-public-key
               mountPath: /etc/ccaas/jwt
