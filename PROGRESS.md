@@ -4,7 +4,7 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-14 (added Voice merge investigation)
+**Last updated:** 2026-09-14 (JWT auth wired platform-wide)
 
 ---
 
@@ -14,9 +14,9 @@ for "what's done, what's next" — more durable than chat history.
 
 | Service | Status | Notes |
 |---|---|---|
-| **Task Router** | Done, deployed | Full domain per `TASK_ROUTER_SPECIFICATION.md` §1-6. Redis hot path (Lua scripts, atomic commits), Postgres-backed Queue/Status/Attribute registries with RLS, full event catalog to NATS JetStream. §7 gaps (transfers, skill matching, force-routing, bullseye, queue timeouts) deliberately out of scope. |
-| **Agent & Presence Service** | Done, deployed | WebSocket connection registry + relay of Task Router's 4 client-facing events (reservation.created/rejected, agent.status.changed, agent.deleted). Redis pub/sub cross-replica fan-out. **Auth is a placeholder** (tenant_id/agent_id query params — insecure, marked loudly). |
-| **Tenant & Identity Management** | Done, **not yet redeployed** | Tenant CRUD, bcrypt login, RBAC roles, ES256 JWT issuance. New shared `pkg/jwtauth` (Signer/Verifier) — built but **not wired into anything yet**. Keypair persisted in Postgres, generated once. |
+| **Task Router** | Done, deployed | Full domain per `TASK_ROUTER_SPECIFICATION.md` §1-6. Redis hot path (Lua scripts, atomic commits), Postgres-backed Queue/Status/Attribute registries with RLS, full event catalog to NATS JetStream. §7 gaps (transfers, skill matching, force-routing, bullseye, queue timeouts) deliberately out of scope. Now requires a real bearer JWT on every RPC. |
+| **Agent & Presence Service** | Done, deployed | WebSocket connection registry + relay of Task Router's 4 client-facing events (reservation.created/rejected, agent.status.changed, agent.deleted). Redis pub/sub cross-replica fan-out. WebSocket upgrade now requires a real `Authorization: Bearer <jwt>` header (placeholder query-param auth retired). |
+| **Tenant & Identity Management** | Done, deployed | Tenant CRUD, bcrypt login, RBAC roles, ES256 JWT issuance, plus a new `IssueServiceToken` RPC for service-to-service auth. `pkg/jwtauth` is now wired into every service. Keypair persisted in Postgres, generated once. |
 
 ### Stub services (6 of 9) — build/health-check only, no domain logic
 
@@ -25,10 +25,14 @@ Reporting, Background Worker Pool, API Gateway.
 
 ### Shared platform plumbing (`/pkg`)
 
-`tenantctx` (gRPC tenant interceptor, now with exemptable methods),
-`eventbus` (NATS JetStream wrapper, incl. `SubscribeEphemeral` for
-per-replica fan-out), `pgtenant` (Postgres RLS helper), `pgqueue`
-(database-as-a-queue), `health`, `config`, `jwtauth` (new, unused so far).
+`tenantctx` (gRPC interceptor — now verifies a real bearer JWT and derives
+`tenant_id` from its `tid` claim; `x-tenant-id` metadata is logging-only,
+never trusted), `eventbus` (NATS JetStream wrapper, incl.
+`SubscribeEphemeral` for per-replica fan-out), `pgtenant` (Postgres RLS
+helper), `pgqueue` (database-as-a-queue), `health`, `config`, `jwtauth`
+(Signer/Verifier + client-side token injection/caching, now in active use),
+`svcauth` (new — wraps the mint/cache/refresh/attach cycle for a service
+calling another service's gRPC API on its own behalf).
 
 ### Infrastructure
 
@@ -36,51 +40,59 @@ per-replica fan-out), `pgtenant` (Postgres RLS helper), `pgqueue`
   JetStream — all healthy, running locally.
 - Kubernetes: Docker Desktop K8s, `ccaas-dev` namespace, all 9 services
   deployed with working gRPC health probes (`grpc_health_probe` baked into
-  every image).
-- **Known gap:** `tenant-identity`'s running pod is still the OLD stub
-  image — the real implementation was built and committed but never
-  rebuilt/redeployed. See To-Do #1.
+  every image). All 9 pods healthy, zero restarts, as of last check.
+- **Auth is now real, not a placeholder**, end-to-end: every gRPC call
+  requires a valid bearer JWT (verified against Tenant & Identity's
+  signing public key, distributed via a K8s ConfigMap every service
+  mounts); Agent Presence's WebSocket requires the same. Service-to-service
+  calls authenticate via `IssueServiceToken` + a shared credential — see
+  `deploy/k8s/service-credential.example.yaml` for the explicit scoping
+  (a narrow stand-in for real per-service identity, not mTLS/zero-trust).
+- **Known gap:** Task Router's `Agent` entity and Tenant & Identity's
+  `User` entity are unrelated today — Agent Presence's WebSocket maps a
+  connection to `agent_id` via the JWT's `sub` claim as a pragmatic stand-in
+  (see `services/agent-presence/internal/wsserver/wsserver.go`'s doc
+  comment), meaning an operator must provision an Agent and a User with the
+  matching ID by convention. No automatic reconciliation exists yet.
 
 ---
 
 ## 2. To-Do (ordered, most actionable first)
 
-### Immediate / housekeeping
+### Auth follow-ups (small, but real)
 
-1. **Redeploy `tenant-identity`** — rebuild its Docker image and roll the
-   K8s deployment so the cluster runs the real implementation, not the old
-   stub. (Same step already done once for `agent-presence`.)
-2. **Distribute Tenant & Identity's public key** — currently a manual step
-   (copy PEM from startup logs into `deploy/k8s/tenant-identity-public-key.local.yaml`,
-   `kubectl apply`). Do this once tenant-identity is redeployed, so the key
-   is actually available in-cluster for step 4 below.
-
-### Real auth wiring (retires the placeholder auth debt)
-
-3. **Wire `pkg/jwtauth` into `pkg/tenantctx`** — today the gRPC interceptor
-   trusts the `x-tenant-id` metadata header with no signature check. Extend
-   it to validate a real JWT (Authorization header) and derive `tenant_id`
-   from the verified `tid` claim instead, per architecture doc §1.1 Layer 1/2.
-4. **Retire Agent Presence's placeholder WebSocket auth** — replace the
-   `?tenant_id=&agent_id=` query-param scheme with real JWT validation
-   (Authorization header or a signed query param) once #3 exists.
+1. **Formal Agent ↔ User reconciliation.** Right now Agent Presence maps a
+   WebSocket connection's `agent_id` to the authenticated JWT's `sub`
+   claim, which only works if an operator provisions a Task Router `Agent`
+   and a Tenant & Identity `User` with the same ID by convention (see the
+   "known gap" note above). A real fix likely means Task Router's `Agent`
+   gaining a `user_id` reference, or an explicit link table — worth doing
+   before building a real Agent Desktop client against this.
+2. **Per-service identity for service-to-service auth.** `IssueServiceToken`
+   today uses one shared secret for every calling service — it proves "some
+   service in this cluster," not "specifically task-router." Fine for now
+   (explicitly scoped as such), but a real per-service credential or mTLS
+   scheme is real future work if this goes beyond home-lab scale.
+3. **JWT key rotation** — no rotation scheme exists; rotating Tenant &
+   Identity's signing key today would invalidate every token every service
+   still expects, with no multi-key/`kid` support to roll it forward safely.
 
 ### Next service to build (pick one — see recommendation below)
 
-5. **API Gateway** — BFF: JWT validation (consumes #3), REST routing to
-   internal gRPC services, WebSocket upgrade proxying for Agent Desktop.
-   This is the first service a real external client would ever hit.
-6. **Digital Channels Gateway or Voice/SIP Media Gateway** — channel
+4. **API Gateway** — BFF: end-user JWT validation, REST routing to internal
+   gRPC services, WebSocket upgrade proxying for Agent Desktop. This is the
+   first service a real external client would ever hit, and the natural
+   place to originate tokens for browser-based clients that can't easily
+   attach custom WebSocket headers themselves.
+5. **Digital Channels Gateway or Voice/SIP Media Gateway** — channel
    ingestion, normalizing inbound work into Task Router's `Task`
    abstraction. Gives Task Router real inbound traffic instead of only
-   synthetic test-driven tasks.
-7. **Historical Reporting** — durable NATS JetStream consumer materializing
-   the full event catalog into query-optimized Postgres storage. Low
-   external dependencies (doesn't block on #3/#4), good candidate to build
-   in parallel with auth wiring if desired.
-8. **Background Worker Pool** — first real job type + `pgqueue.Poller`
-   wiring (e.g. post-call wrap-up sync, webhook delivery). Also low-
-   dependency, could go in parallel.
+   synthetic test-driven tasks. See "Voice merge" below for the
+   Voice/SIP Media Gateway option specifically.
+6. **Historical Reporting** — durable NATS JetStream consumer materializing
+   the full event catalog into query-optimized Postgres storage.
+7. **Background Worker Pool** — first real job type + `pgqueue.Poller`
+   wiring (e.g. post-call wrap-up sync, webhook delivery).
 
 ### Voice merge (friend's ESXi/k3s PoC → `voice-media-gateway`)
 
@@ -138,7 +150,12 @@ existing schema/pipeline — before any code merge work starts.
   pub/sub fan-out half of architecture doc §2.2's dependency line was
   built — no durable "who's online" registry yet).
 - Tenant & Identity: full OAuth2/OIDC authorization server, MFA, password
-  reset, tenant business-hours/feature-flag config, JWT key rotation.
+  reset, tenant business-hours/feature-flag config.
+- Real mTLS/zero-trust service mesh (per-service identity, transport
+  encryption) — today's service-to-service auth is a shared-credential
+  stand-in; see To-Do #2. No gRPC connection in this repo uses transport
+  TLS yet (`insecure.NewCredentials()` throughout) — the bearer token is
+  the only security boundary so far, not the transport itself.
 - `ingress-nginx` + `mkcert` TLS setup for local K8s (architecture doc
   §1.4) — noted as manual/interactive setup, never scaffolded.
 
@@ -146,22 +163,22 @@ existing schema/pipeline — before any code merge work starts.
 
 ## 3. Recommended next step
 
-**Wire real JWT auth (To-Do #3/#4) before starting a new service.**
+**Build API Gateway next.**
 
-Reasoning: three services now carry real, load-bearing placeholder-auth debt
-(Agent Presence's WebSocket, and implicitly every service's blind trust of
-`x-tenant-id`). Every new service built on top of `pkg/tenantctx` inherits
-that same gap, and the longer it's deferred, the more call sites eventually
-need to be revisited. Tenant & Identity — the service that makes this fix
-possible — is already done. This is a contained, well-scoped change (one
-shared package, two call sites) versus the more open-ended scope of a new
-service, and it's the last piece standing between this system and an
-honest "yes, tenant isolation is actually enforced end-to-end" story.
+Reasoning: every service now genuinely enforces tenant isolation via real
+JWTs — that story is done. API Gateway is the one piece standing between
+this system and an actual external client being able to do anything at
+all: today, every call into the platform has to originate from a
+throwaway internal test client with a hand-obtained token. API Gateway is
+also the natural place to solve the practical end of the auth story (an
+end-user login flow, issuing/refreshing tokens for a browser client) since
+it's the edge that's supposed to originate tenant context in the first
+place per architecture doc §1.1 Layer 1.
 
-Runner-up: **Historical Reporting**, if you'd rather see a visible new
-capability (a real BI/reporting consumer) before circling back to auth — it
-has no dependency on the auth wiring and can be built in parallel by a
-second background agent without contention.
+Runner-up: **Voice/SIP Media Gateway**, if the friend's-PoC merge (see
+below) becomes actionable before then — it would let the API Gateway
+build and the voice merge proceed somewhat in parallel, since they touch
+different services.
 
 ---
 
