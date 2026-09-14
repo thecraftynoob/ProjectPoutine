@@ -4,7 +4,7 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-14 (added Voice merge investigation)
 
 ---
 
@@ -81,6 +81,52 @@ per-replica fan-out), `pgtenant` (Postgres RLS helper), `pgqueue`
 8. **Background Worker Pool** — first real job type + `pgqueue.Poller`
    wiring (e.g. post-call wrap-up sync, webhook delivery). Also low-
    dependency, could go in parallel.
+
+### Voice merge (friend's ESXi/k3s PoC → `voice-media-gateway`)
+
+**Status: investigation only, blocked on answers from friend — not started.**
+
+Friend has a working FreeSWITCH-based voice/STT PoC running on a separate
+k3s cluster (3-node, ESXi-hosted: `poutine-poc-master`/`poc-1`/`poc-2`,
+documented in [`poutine-poc-architecture.md`](./poutine-poc-architecture.md)).
+Goal: merge his voice code
+into this repo as the real implementation of the already-scaffolded
+`voice-media-gateway` service, sharing one Git repo with two different
+local dev setups (this repo's Docker Desktop K8s vs. his ESXi k3s).
+
+**Compatible:**
+- Both are Kubernetes — manifests are portable in principle.
+- FreeSWITCH is already the architecture doc's chosen voice technology
+  (§2.2) — no technology mismatch on the voice/SIP layer itself.
+- Postgres + Redis present on both sides (minor version drift: his
+  `postgres:17-alpine` vs. this repo's `postgres:16` — trivial to align).
+
+**Incompatible / needs resolving before merge, not after:**
+1. **Event bus: his PoC uses Kafka (KRaft mode); this repo uses NATS
+   JetStream.** Everything here — tenant-scoped subjects, the event
+   catalog, `pkg/eventbus`, Agent Presence's relay, the planned Historical
+   Reporting consumer — is built on JetStream semantics. Recommended
+   direction: standardize on NATS JetStream and have his side drop Kafka,
+   since his own doc states Kafka was chosen only as "the intended
+   end-state technology," not because anything downstream is already
+   built against its wire protocol. **Open question for friend: is he
+   actually willing to swap Kafka → NATS?**
+2. **No tenant_id concept in his pipeline.** Every table and every event
+   subject in this system is tenant-scoped (architecture doc §1.1). His
+   voice/STT code needs tenant_id threaded through before it can plug into
+   the rest of the platform — this can't be bridged around, it has to be
+   retrofitted into his code.
+3. **His language/framework is unconfirmed** (not Go, per last check —
+   likely Python for an STT pipeline, but not verified). If non-Go, it
+   joins the monorepo as its own non-Go module (its own Dockerfile/build,
+   not `go.mod`) and can't use this repo's Go `/pkg` helpers
+   (`tenantctx`, `eventbus`, `pgtenant`) directly — needs either Python
+   equivalents or a thinner contract-only boundary (gRPC + NATS pub/sub,
+   no shared library code).
+
+**Next action:** confirm with friend (a) Kafka→NATS flexibility, (b)
+actual language/framework, (c) feasibility of adding tenant_id to his
+existing schema/pipeline — before any code merge work starts.
 
 ### Known deferred items (by design, not oversights)
 
