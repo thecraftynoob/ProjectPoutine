@@ -187,7 +187,8 @@ func (x *ChannelCapacity) GetInterruptible() bool {
 	return false
 }
 
-// Agent mirrors spec Section 2.1 exactly.
+// Agent mirrors spec Section 2.1, plus one platform-layer addition not in
+// the spec: user_id.
 type Agent struct {
 	state           protoimpl.MessageState      `protogen:"open.v1"`
 	AgentId         string                      `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
@@ -196,8 +197,24 @@ type Agent struct {
 	Capacity        map[string]*ChannelCapacity `protobuf:"bytes,4,rep,name=capacity,proto3" json:"capacity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Queues          []string                    `protobuf:"bytes,5,rep,name=queues,proto3" json:"queues,omitempty"`
 	StatusChangedAt *timestamppb.Timestamp      `protobuf:"bytes,6,opt,name=status_changed_at,json=statusChangedAt,proto3" json:"status_changed_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Optional. The Tenant & Identity Management User ID (proto/tenant-identity/v1)
+	// of the human operating this Agent, if known. NOT part of
+	// TASK_ROUTER_SPECIFICATION.md's Agent definition -- an explicit,
+	// additive link so this Agent's WebSocket connection (Agent & Presence
+	// Service, see services/agent-presence/internal/wsserver's doc comment
+	// on "Agent identity: reconciling Task Router's Agent with Tenant &
+	// Identity's User") can be traced back to a real User record instead of
+	// relying solely on an operator's undocumented convention of using the
+	// same string for both IDs. Purely informational at this milestone: it
+	// is never validated against Tenant & Identity (no cross-service call
+	// on the CreateAgent path) and nothing in this service enforces
+	// agent_id == user_id for the WebSocket mapping to keep working -- see
+	// PROGRESS.md's "Formal Agent <-> User reconciliation" to-do for what a
+	// fuller fix would still need to add (validation, and/or using this
+	// field instead of agent_id itself for WebSocket routing).
+	UserId        string `protobuf:"bytes,7,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Agent) Reset() {
@@ -270,6 +287,13 @@ func (x *Agent) GetStatusChangedAt() *timestamppb.Timestamp {
 		return x.StatusChangedAt
 	}
 	return nil
+}
+
+func (x *Agent) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
 }
 
 // Task mirrors spec Section 2.2 exactly.
@@ -470,10 +494,12 @@ type CreateAgentRequest struct {
 	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	// Unvalidated against the Status registry at creation time (spec
 	// Section 3.2). Empty string defaults to "Offline" server-side.
-	Status        string                      `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
-	Attributes    map[string]*AttributeValue  `protobuf:"bytes,3,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Capacity      map[string]*ChannelCapacity `protobuf:"bytes,4,rep,name=capacity,proto3" json:"capacity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Queues        []string                    `protobuf:"bytes,5,rep,name=queues,proto3" json:"queues,omitempty"`
+	Status     string                      `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`
+	Attributes map[string]*AttributeValue  `protobuf:"bytes,3,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Capacity   map[string]*ChannelCapacity `protobuf:"bytes,4,rep,name=capacity,proto3" json:"capacity,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Queues     []string                    `protobuf:"bytes,5,rep,name=queues,proto3" json:"queues,omitempty"`
+	// Optional. See Agent.user_id's doc comment.
+	UserId        string `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -541,6 +567,13 @@ func (x *CreateAgentRequest) GetQueues() []string {
 		return x.Queues
 	}
 	return nil
+}
+
+func (x *CreateAgentRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
 }
 
 type ListAgentsRequest struct {
@@ -1607,7 +1640,7 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\x05ready\x18\x01 \x01(\bR\x05ready\x12\x10\n" +
 	"\x03max\x18\x02 \x01(\x05R\x03max\x12\x16\n" +
 	"\x06active\x18\x03 \x01(\x05R\x06active\x12$\n" +
-	"\rinterruptible\x18\x04 \x01(\bR\rinterruptible\"\xdb\x03\n" +
+	"\rinterruptible\x18\x04 \x01(\bR\rinterruptible\"\xf4\x03\n" +
 	"\x05Agent\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12D\n" +
@@ -1616,7 +1649,8 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"attributes\x12>\n" +
 	"\bcapacity\x18\x04 \x03(\v2\".taskrouter.v1.Agent.CapacityEntryR\bcapacity\x12\x16\n" +
 	"\x06queues\x18\x05 \x03(\tR\x06queues\x12F\n" +
-	"\x11status_changed_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusChangedAt\x1a\\\n" +
+	"\x11status_changed_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x0fstatusChangedAt\x12\x17\n" +
+	"\auser_id\x18\a \x01(\tR\x06userId\x1a\\\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\x1a[\n" +
@@ -1644,7 +1678,7 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xba\x03\n" +
+	"expires_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xd3\x03\n" +
 	"\x12CreateAgentRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\x12\x16\n" +
 	"\x06status\x18\x02 \x01(\tR\x06status\x12Q\n" +
@@ -1652,7 +1686,8 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"attributes\x18\x03 \x03(\v21.taskrouter.v1.CreateAgentRequest.AttributesEntryR\n" +
 	"attributes\x12K\n" +
 	"\bcapacity\x18\x04 \x03(\v2/.taskrouter.v1.CreateAgentRequest.CapacityEntryR\bcapacity\x12\x16\n" +
-	"\x06queues\x18\x05 \x03(\tR\x06queues\x1a\\\n" +
+	"\x06queues\x18\x05 \x03(\tR\x06queues\x12\x17\n" +
+	"\auser_id\x18\x06 \x01(\tR\x06userId\x1a\\\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\x1a[\n" +

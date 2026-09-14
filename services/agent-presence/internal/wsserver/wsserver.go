@@ -62,17 +62,20 @@
 // tenant_identity.proto) are two separate, unrelated concepts in this
 // system today: an Agent is purely a routing-domain profile (status,
 // capacity, queues, skills) identified by an operator-chosen
-// `agent_id` string with NO reference to any User record, while a User is
-// purely an identity/auth-domain principal (username, bcrypt hash, RBAC
-// roles) identified by a server-generated UUID. Nothing in either
-// service's schema links the two today.
+// `agent_id` string, while a User is purely an identity/auth-domain
+// principal (username, bcrypt hash, RBAC roles) identified by a
+// server-generated UUID. Task Router's Agent now carries an OPTIONAL
+// `user_id` field (added after this milestone, see that proto message's
+// doc comment) recording which User operates it, but that field is
+// purely informational today -- nothing reads it, and it does not change
+// the mapping this package actually uses at connection time (below).
 //
-// This package resolves that tension the simplest way that is still
-// correct for this milestone's scope: it treats the JWT's `sub` claim
-// (the authenticated User's user_id) AS the agent_id used to register and
-// route WebSocket messages to this connection. This is deliberately a
-// pragmatic identity mapping, not a claim that the two entities are "the
-// same thing" architecturally:
+// This package resolves the identity-mapping problem the simplest way
+// that is still correct for this milestone's scope: it treats the JWT's
+// `sub` claim (the authenticated User's user_id) AS the agent_id used to
+// register and route WebSocket messages to this connection. This is
+// deliberately a pragmatic identity mapping, not a claim that the two
+// entities are "the same thing" architecturally:
 //   - It requires no schema or proto change to either service to ship
 //     this milestone.
 //   - It is directionally correct for the real-world shape of this
@@ -84,12 +87,14 @@
 //     must use the SAME string as both the Agent's `agent_id` and the
 //     User's `user_id` for task-offer delivery (relay/envelope.go's
 //     agentId-based lookup) to reach the right WebSocket connection --
-//     there is no automatic reconciliation. A future milestone that
-//     formally unifies these two entities (e.g. Task Router's Agent
-//     gaining a user_id foreign key, or Tenant & Identity gaining an
-//     agent-role-specific profile) would replace this mapping with a
-//     real lookup; this is explicitly flagged as follow-up scope, not
-//     re-litigated here.
+//     there is no automatic reconciliation, and the Agent's new
+//     `user_id` field is not consulted or validated against this to
+//     enforce that convention. A future milestone that formally unifies
+//     these two entities (e.g. this package switching to a real lookup
+//     of the Agent by its `user_id` field instead of assuming
+//     agent_id == sub) would replace this mapping with a real lookup;
+//     this is explicitly flagged as follow-up scope, not re-litigated
+//     here.
 package wsserver
 
 import (

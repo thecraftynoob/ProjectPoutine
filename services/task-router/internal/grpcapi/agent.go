@@ -37,6 +37,7 @@ func (s *TaskRouterServer) CreateAgent(ctx context.Context, req *taskrouterv1.Cr
 		Attributes: attrs,
 		Capacity:   capacity,
 		Queues:     req.GetQueues(),
+		UserID:     req.GetUserId(),
 	})
 	if err == redisdomain.ErrAlreadyExists {
 		return nil, status.Errorf(codes.AlreadyExists, "agent %q already exists", req.GetAgentId())

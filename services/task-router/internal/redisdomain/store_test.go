@@ -82,9 +82,13 @@ func TestCreateAgent_DefaultsAndRoundTrip(t *testing.T) {
 		Capacity: map[string]ChannelCapacity{
 			"chat": {Ready: true, Max: 3, Interruptible: true},
 		},
+		UserID: "user-1",
 	})
 	if created.Status != StatusOffline {
 		t.Fatalf("expected default status %q, got %q", StatusOffline, created.Status)
+	}
+	if created.UserID != "user-1" {
+		t.Fatalf("expected UserID %q on create response, got %q", "user-1", created.UserID)
 	}
 
 	got, err := s.GetAgent(ctx, tenant, "agent-1")
@@ -96,6 +100,27 @@ func TestCreateAgent_DefaultsAndRoundTrip(t *testing.T) {
 	}
 	if len(got.Queues) != 1 || got.Queues[0] != "q1" {
 		t.Fatalf("unexpected queues round-trip: %+v", got.Queues)
+	}
+	if got.UserID != "user-1" {
+		t.Fatalf("expected UserID %q on GetAgent round-trip, got %q", "user-1", got.UserID)
+	}
+}
+
+// TestCreateAgent_UserIDOptional confirms UserID is genuinely optional --
+// omitting it must not break creation or round-trip (see Agent.UserID's
+// doc comment: purely informational, never required).
+func TestCreateAgent_UserIDOptional(t *testing.T) {
+	ctx := context.Background()
+	s, tenant := newTestStore(t)
+
+	mustCreateAgent(t, ctx, s, tenant, CreateAgentInput{AgentID: "agent-1"})
+
+	got, err := s.GetAgent(ctx, tenant, "agent-1")
+	if err != nil {
+		t.Fatalf("GetAgent failed: %v", err)
+	}
+	if got.UserID != "" {
+		t.Fatalf("expected empty UserID when omitted, got %q", got.UserID)
 	}
 }
 

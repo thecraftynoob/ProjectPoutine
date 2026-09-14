@@ -4,7 +4,9 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-13 (API Gateway built: REST routing, JWT
+**Last updated:** 2026-09-13 (Task Router's `Agent` gained an optional
+`user_id` field — narrows, but doesn't close, the Agent↔User
+reconciliation gap. Previous entry: API Gateway built — REST routing, JWT
 validation, WebSocket ticket + proxying)
 
 ---
@@ -50,12 +52,15 @@ calling another service's gRPC API on its own behalf).
   calls authenticate via `IssueServiceToken` + a shared credential — see
   `deploy/k8s/service-credential.example.yaml` for the explicit scoping
   (a narrow stand-in for real per-service identity, not mTLS/zero-trust).
-- **Known gap:** Task Router's `Agent` entity and Tenant & Identity's
-  `User` entity are unrelated today — Agent Presence's WebSocket maps a
-  connection to `agent_id` via the JWT's `sub` claim as a pragmatic stand-in
-  (see `services/agent-presence/internal/wsserver/wsserver.go`'s doc
-  comment), meaning an operator must provision an Agent and a User with the
-  matching ID by convention. No automatic reconciliation exists yet.
+- **Known gap (narrowed, not closed):** Task Router's `Agent` entity now
+  carries an optional `user_id` field linking it to a Tenant & Identity
+  `User`, but it's purely informational — Agent Presence's WebSocket
+  still maps a connection to `agent_id` via the JWT's `sub` claim as a
+  pragmatic stand-in (see
+  `services/agent-presence/internal/wsserver/wsserver.go`'s doc comment),
+  meaning an operator must still provision an Agent and a User with the
+  matching ID by convention. No automatic reconciliation/validation
+  exists yet — see To-Do #1.
 
 ---
 
@@ -63,13 +68,22 @@ calling another service's gRPC API on its own behalf).
 
 ### Auth follow-ups (small, but real)
 
-1. **Formal Agent ↔ User reconciliation.** Right now Agent Presence maps a
-   WebSocket connection's `agent_id` to the authenticated JWT's `sub`
-   claim, which only works if an operator provisions a Task Router `Agent`
-   and a Tenant & Identity `User` with the same ID by convention (see the
-   "known gap" note above). A real fix likely means Task Router's `Agent`
-   gaining a `user_id` reference, or an explicit link table — worth doing
-   before building a real Agent Desktop client against this.
+1. **Formal Agent ↔ User reconciliation — partially addressed.** Task
+   Router's `Agent` (and `CreateAgentRequest`) now carries an optional
+   `user_id` field (`proto/task-router/v1/task_router.proto`,
+   2026-09-13) recording which Tenant & Identity `User` operates it. This
+   is purely additive and purely informational today: it is not
+   validated against Tenant & Identity at creation time (no cross-service
+   call), and Agent Presence's WebSocket mapping still uses the JWT
+   `sub` claim directly as `agent_id` rather than looking this field up
+   (see `services/agent-presence/internal/wsserver/wsserver.go`'s doc
+   comment) — an operator must still provision matching IDs by
+   convention for WebSocket delivery to reach the right connection.
+   What's still open: (a) validating `user_id` against Tenant & Identity
+   on `CreateAgent`, (b) switching Agent Presence's mapping to a real
+   lookup instead of the `sub`-as-`agent_id` shortcut, (c) deciding what
+   happens when the two disagree. Worth finishing before building a real
+   Agent Desktop client against this.
 2. **Per-service identity for service-to-service auth.** `IssueServiceToken`
    today uses one shared secret for every calling service — it proves "some
    service in this cluster," not "specifically task-router." Fine for now

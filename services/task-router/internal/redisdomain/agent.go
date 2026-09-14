@@ -17,6 +17,8 @@ type CreateAgentInput struct {
 	Attributes map[string]AttributeValue
 	Capacity   map[string]ChannelCapacity
 	Queues     []string
+	// UserID is optional -- see Agent.UserID's doc comment (types.go).
+	UserID string
 }
 
 // CreateAgent atomically creates a new agent record, applying
@@ -48,6 +50,7 @@ func (s *Store) CreateAgent(ctx context.Context, tenantID string, in CreateAgent
 		formatTime(now),
 		attrsJSON,
 		queuesJSON,
+		in.UserID,
 		len(in.Capacity),
 	}
 	for channel, cap := range in.Capacity {
@@ -76,6 +79,7 @@ func (s *Store) CreateAgent(ctx context.Context, tenantID string, in CreateAgent
 		Capacity:        cloneCap(in.Capacity),
 		Queues:          append([]string(nil), in.Queues...),
 		StatusChangedAt: now,
+		UserID:          in.UserID,
 	}, nil
 }
 
@@ -141,6 +145,7 @@ func decodeAgent(agentID string, fields map[string]string) (Agent, error) {
 		Capacity:        capacity,
 		Queues:          queues,
 		StatusChangedAt: statusChangedAt,
+		UserID:          fields["userId"],
 	}, nil
 }
 

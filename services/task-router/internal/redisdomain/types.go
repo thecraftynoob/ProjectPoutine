@@ -19,7 +19,9 @@ type ChannelCapacity struct {
 	Interruptible bool `json:"interruptible"`
 }
 
-// Agent mirrors spec Section 2.1.
+// Agent mirrors spec Section 2.1, plus UserID (a platform-layer addition
+// not in the spec -- see proto/task-router/v1/task_router.proto's
+// Agent.user_id doc comment for the full rationale and scope).
 type Agent struct {
 	AgentID         string                     `json:"agentId"`
 	Status          string                     `json:"status"`
@@ -27,6 +29,7 @@ type Agent struct {
 	Capacity        map[string]ChannelCapacity `json:"capacity"`
 	Queues          []string                   `json:"queues"`
 	StatusChangedAt time.Time                  `json:"statusChangedAt"`
+	UserID          string                     `json:"userId,omitempty"`
 }
 
 // TaskStatus enumerates spec Section 5.1's Task lifecycle states.

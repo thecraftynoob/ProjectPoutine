@@ -98,6 +98,7 @@ func agentToProto(a redisdomain.Agent) *taskrouterv1.Agent {
 		Capacity:        capacityToProto(a.Capacity),
 		Queues:          append([]string(nil), a.Queues...),
 		StatusChangedAt: timestamppb.New(a.StatusChangedAt),
+		UserId:          a.UserID,
 	}
 }
 

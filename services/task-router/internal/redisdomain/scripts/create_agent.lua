@@ -13,8 +13,9 @@
 -- ARGV[3] = statusChangedAt (RFC3339Nano)
 -- ARGV[4] = attributes JSON
 -- ARGV[5] = queues JSON
--- ARGV[6] = capacityCount (N) -- number of channel entries following
--- ARGV[7..6+2N] = pairs of (channelName, capacityJSON)
+-- ARGV[6] = userId (optional; empty string if not provided)
+-- ARGV[7] = capacityCount (N) -- number of channel entries following
+-- ARGV[8..7+2N] = pairs of (channelName, capacityJSON)
 --
 -- Returns: 1 on success, 0 if the agent already exists.
 
@@ -29,11 +30,12 @@ redis.call('HSET', KEYS[2],
   'status', ARGV[2],
   'statusChangedAt', ARGV[3],
   'attributes', ARGV[4],
-  'queues', ARGV[5]
+  'queues', ARGV[5],
+  'userId', ARGV[6]
 )
 
-local capCount = tonumber(ARGV[6])
-local idx = 7
+local capCount = tonumber(ARGV[7])
+local idx = 8
 for i = 1, capCount do
   local channel = ARGV[idx]
   local capJSON = ARGV[idx + 1]

@@ -220,7 +220,8 @@ message ChannelCapacity {
   bool interruptible = 4;
 }
 
-// Agent mirrors spec Section 2.1 exactly.
+// Agent mirrors spec Section 2.1, plus one platform-layer addition not in
+// the spec: user_id.
 message Agent {
   string agent_id = 1;
   string status = 2;
@@ -228,6 +229,22 @@ message Agent {
   map<string, ChannelCapacity> capacity = 4;
   repeated string queues = 5;
   google.protobuf.Timestamp status_changed_at = 6;
+  // Optional. The Tenant & Identity Management User ID (proto/tenant-identity/v1)
+  // of the human operating this Agent, if known. NOT part of
+  // TASK_ROUTER_SPECIFICATION.md's Agent definition -- an explicit,
+  // additive link so this Agent's WebSocket connection (Agent & Presence
+  // Service, see services/agent-presence/internal/wsserver's doc comment
+  // on "Agent identity: reconciling Task Router's Agent with Tenant &
+  // Identity's User") can be traced back to a real User record instead of
+  // relying solely on an operator's undocumented convention of using the
+  // same string for both IDs. Purely informational at this milestone: it
+  // is never validated against Tenant & Identity (no cross-service call
+  // on the CreateAgent path) and nothing in this service enforces
+  // agent_id == user_id for the WebSocket mapping to keep working -- see
+  // PROGRESS.md's "Formal Agent <-> User reconciliation" to-do for what a
+  // fuller fix would still need to add (validation, and/or using this
+  // field instead of agent_id itself for WebSocket routing).
+  string user_id = 7;
 }
 
 // Task mirrors spec Section 2.2 exactly.
@@ -269,6 +286,8 @@ message CreateAgentRequest {
   map<string, AttributeValue> attributes = 3;
   map<string, ChannelCapacity> capacity = 4;
   repeated string queues = 5;
+  // Optional. See Agent.user_id's doc comment.
+  string user_id = 6;
 }
 
 message ListAgentsRequest {}
