@@ -111,6 +111,60 @@ service TaskRouterAdminService {
       delete: "/v1/admin/attributes/{name}"
     };
   }
+
+  // --- Disposition Registry ---
+  //
+  // A Disposition is a tenant-defined tag (e.g. "Ticket Created",
+  // "Escalated Ticket", "Call Complete") an agent selects during a task's
+  // WrapUp status, for historical reporting -- new concept introduced
+  // alongside the Wrap Up / two-step task completion lifecycle
+  // (TaskRouterService.EndTask / SetTaskDisposition / CompleteTask).
+  // Associated to Queues (a queue's agents only see dispositions relevant
+  // to that queue's work) via AssociateQueueDispositions.
+
+  // RegisterDisposition defines a new disposition value. Rejected if a
+  // disposition with this ID already exists.
+  rpc RegisterDisposition(RegisterDispositionRequest) returns (Disposition) {
+    option (google.api.http) = {
+      post: "/v1/admin/dispositions"
+      body: "*"
+    };
+  }
+
+  // ListDispositions enumerates every disposition registered for the
+  // tenant.
+  rpc ListDispositions(ListDispositionsRequest) returns (ListDispositionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/dispositions"
+    };
+  }
+
+  // RemoveDisposition retires a disposition. Tasks that already carry this
+  // disposition_id are unaffected (their denormalized disposition_name is
+  // untouched); removal only blocks future use via SetTaskDisposition, and
+  // this disposition is dropped from every queue association.
+  rpc RemoveDisposition(RemoveDispositionRequest) returns (RemoveDispositionResponse) {
+    option (google.api.http) = {
+      delete: "/v1/admin/dispositions/{disposition_id}"
+    };
+  }
+
+  // AssociateQueueDispositions fully replaces the set of dispositions
+  // available to agents working a given queue.
+  rpc AssociateQueueDispositions(AssociateQueueDispositionsRequest) returns (AssociateQueueDispositionsResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/queues/{queue_id}/dispositions"
+      body: "*"
+    };
+  }
+
+  // ListQueueDispositions returns the dispositions currently associated to
+  // one queue.
+  rpc ListQueueDispositions(ListQueueDispositionsRequest) returns (ListQueueDispositionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/queues/{queue_id}/dispositions"
+    };
+  }
 }
 
 // Queue mirrors spec Section 2.4 exactly.
@@ -214,3 +268,53 @@ message RemoveAttributeRequest {
 }
 
 message RemoveAttributeResponse {}
+
+// --- Disposition registry types ---
+
+// Disposition is a tenant-defined tag selectable by an agent during a
+// task's WrapUp status, for historical reporting (see
+// TaskRouterService.SetTaskDisposition).
+message Disposition {
+  string disposition_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+// --- Disposition RPC messages ---
+
+message RegisterDispositionRequest {
+  // Optional; server-generated if empty.
+  string disposition_id = 1;
+  string name = 2;
+}
+
+message ListDispositionsRequest {}
+
+message ListDispositionsResponse {
+  repeated Disposition dispositions = 1;
+}
+
+message RemoveDispositionRequest {
+  string disposition_id = 1;
+}
+
+message RemoveDispositionResponse {}
+
+message AssociateQueueDispositionsRequest {
+  string queue_id = 1;
+  // Full replacement list of disposition_ids available to this queue.
+  // Rejected entirely (no partial application) if any disposition_id
+  // doesn't exist -- mirrors ReplaceAgentQueues' full-replace/all-or-
+  // nothing convention (TaskRouterService.ReplaceAgentQueues).
+  repeated string disposition_ids = 2;
+}
+
+message AssociateQueueDispositionsResponse {}
+
+message ListQueueDispositionsRequest {
+  string queue_id = 1;
+}
+
+message ListQueueDispositionsResponse {
+  repeated Disposition dispositions = 1;
+}

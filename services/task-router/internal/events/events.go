@@ -36,12 +36,19 @@ const (
 	EventTaskEnqueued  = "enqueued"
 	EventTaskAccepted  = "accepted"
 	EventTaskCompleted = "completed"
+	// EventTaskEnded / EventTaskDispositionSet: Wrap Up / Disposition
+	// two-step completion lifecycle additions.
+	EventTaskEnded          = "ended"
+	EventTaskDispositionSet = "disposition.set"
 
 	EventAgentCreated               = "created"
 	EventAgentStatusChanged         = "status.changed"
 	EventAgentCapacityConfigUpdated = "capacity.config.updated"
 	EventAgentQueuesUpdated         = "queues.updated"
 	EventAgentDeleted               = "deleted"
+	// EventAgentWrapUpTimedOut: the wrap-up timer reached 0 while the task
+	// was still WrapUp, resetting the agent's status to Available.
+	EventAgentWrapUpTimedOut = "wrapup.timed_out"
 
 	EventReservationCreated  = "created"
 	EventReservationAccepted = "accepted"
@@ -119,15 +126,50 @@ func (p *Publisher) TaskAccepted(ctx context.Context, tenantID uuid.UUID, taskID
 }
 
 // TaskCompleted: "The task-completion capability is invoked" ->
-// {taskId, agentId (nullable)}.
-func (p *Publisher) TaskCompleted(ctx context.Context, tenantID uuid.UUID, taskID, agentID string) error {
+// {taskId, agentId (nullable), dispositionId (nullable), dispositionName
+// (nullable)}. dispositionId/dispositionName are included so Historical
+// Reporting's generic JSONB ingestion (services/historical-reporting/
+// internal/eventconsumer) captures the disposition on the historical
+// record without any historical-reporting-side schema change -- per the
+// Wrap Up / Disposition two-step completion lifecycle's requirement that
+// dispositions be visible in historical reporting.
+func (p *Publisher) TaskCompleted(ctx context.Context, tenantID uuid.UUID, taskID, agentID, dispositionID, dispositionName string) error {
 	fields := map[string]any{"taskId": taskID}
 	if agentID != "" {
 		fields["agentId"] = agentID
 	} else {
 		fields["agentId"] = nil
 	}
+	if dispositionID != "" {
+		fields["dispositionId"] = dispositionID
+		fields["dispositionName"] = dispositionName
+	} else {
+		fields["dispositionId"] = nil
+		fields["dispositionName"] = nil
+	}
 	return p.publish(ctx, tenantID, DomainTask, EventTaskCompleted, fields)
+}
+
+// TaskEnded: "EndTask is invoked (step 1 of the Wrap Up / Disposition
+// two-step completion lifecycle)" -> {taskId, agentId (nullable)}.
+func (p *Publisher) TaskEnded(ctx context.Context, tenantID uuid.UUID, taskID, agentID string) error {
+	fields := map[string]any{"taskId": taskID}
+	if agentID != "" {
+		fields["agentId"] = agentID
+	} else {
+		fields["agentId"] = nil
+	}
+	return p.publish(ctx, tenantID, DomainTask, EventTaskEnded, fields)
+}
+
+// TaskDispositionSet: "SetTaskDisposition is invoked" ->
+// {taskId, dispositionId, dispositionName}.
+func (p *Publisher) TaskDispositionSet(ctx context.Context, tenantID uuid.UUID, taskID, dispositionID, dispositionName string) error {
+	return p.publish(ctx, tenantID, DomainTask, EventTaskDispositionSet, map[string]any{
+		"taskId":          taskID,
+		"dispositionId":   dispositionID,
+		"dispositionName": dispositionName,
+	})
 }
 
 // --- Agent domain (spec Section 6.2) ---
@@ -173,6 +215,15 @@ func (p *Publisher) AgentQueuesUpdated(ctx context.Context, tenantID uuid.UUID, 
 func (p *Publisher) AgentDeleted(ctx context.Context, tenantID uuid.UUID, agentID string) error {
 	return p.publish(ctx, tenantID, DomainAgent, EventAgentDeleted, map[string]any{
 		"agentId": agentID,
+	})
+}
+
+// AgentWrapUpTimedOut: "A task's wrap-up timer reached 0 while still
+// WrapUp, resetting the agent's status to Available" -> {agentId, taskId}.
+func (p *Publisher) AgentWrapUpTimedOut(ctx context.Context, tenantID uuid.UUID, agentID, taskID string) error {
+	return p.publish(ctx, tenantID, DomainAgent, EventAgentWrapUpTimedOut, map[string]any{
+		"agentId": agentID,
+		"taskId":  taskID,
 	})
 }
 

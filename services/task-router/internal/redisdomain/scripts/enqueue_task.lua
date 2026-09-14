@@ -17,6 +17,8 @@
 -- ARGV[4] = requiredAttributes JSON
 -- ARGV[5] = enqueuedAt (RFC3339Nano)
 -- ARGV[6] = enqueuedAt unix micros (ZSET score)
+-- ARGV[7] = wrapUpTimeoutSeconds (Wrap Up / Disposition lifecycle;
+--           "0" means no wrap-up timer configured)
 --
 -- Returns: 1 on success, 0 if the task already exists.
 --
@@ -42,7 +44,10 @@ redis.call('HSET', KEYS[2],
   'enqueuedAtMicros', ARGV[6],
   'status', 'Pending',
   'currentReservationId', '',
-  'assignedAgentId', ''
+  'assignedAgentId', '',
+  'wrapUpTimeoutSeconds', ARGV[7],
+  'dispositionId', '',
+  'dispositionName', ''
 )
 redis.call('ZADD', KEYS[3], ARGV[6], taskId)
 

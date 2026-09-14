@@ -19,17 +19,22 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TaskRouterAdminService_RegisterQueue_FullMethodName     = "/taskrouter.v1.TaskRouterAdminService/RegisterQueue"
-	TaskRouterAdminService_ListQueues_FullMethodName        = "/taskrouter.v1.TaskRouterAdminService/ListQueues"
-	TaskRouterAdminService_GetQueue_FullMethodName          = "/taskrouter.v1.TaskRouterAdminService/GetQueue"
-	TaskRouterAdminService_RemoveQueue_FullMethodName       = "/taskrouter.v1.TaskRouterAdminService/RemoveQueue"
-	TaskRouterAdminService_RegisterStatus_FullMethodName    = "/taskrouter.v1.TaskRouterAdminService/RegisterStatus"
-	TaskRouterAdminService_ListStatuses_FullMethodName      = "/taskrouter.v1.TaskRouterAdminService/ListStatuses"
-	TaskRouterAdminService_RemoveStatus_FullMethodName      = "/taskrouter.v1.TaskRouterAdminService/RemoveStatus"
-	TaskRouterAdminService_RegisterAttribute_FullMethodName = "/taskrouter.v1.TaskRouterAdminService/RegisterAttribute"
-	TaskRouterAdminService_ListAttributes_FullMethodName    = "/taskrouter.v1.TaskRouterAdminService/ListAttributes"
-	TaskRouterAdminService_GetAttribute_FullMethodName      = "/taskrouter.v1.TaskRouterAdminService/GetAttribute"
-	TaskRouterAdminService_RemoveAttribute_FullMethodName   = "/taskrouter.v1.TaskRouterAdminService/RemoveAttribute"
+	TaskRouterAdminService_RegisterQueue_FullMethodName              = "/taskrouter.v1.TaskRouterAdminService/RegisterQueue"
+	TaskRouterAdminService_ListQueues_FullMethodName                 = "/taskrouter.v1.TaskRouterAdminService/ListQueues"
+	TaskRouterAdminService_GetQueue_FullMethodName                   = "/taskrouter.v1.TaskRouterAdminService/GetQueue"
+	TaskRouterAdminService_RemoveQueue_FullMethodName                = "/taskrouter.v1.TaskRouterAdminService/RemoveQueue"
+	TaskRouterAdminService_RegisterStatus_FullMethodName             = "/taskrouter.v1.TaskRouterAdminService/RegisterStatus"
+	TaskRouterAdminService_ListStatuses_FullMethodName               = "/taskrouter.v1.TaskRouterAdminService/ListStatuses"
+	TaskRouterAdminService_RemoveStatus_FullMethodName               = "/taskrouter.v1.TaskRouterAdminService/RemoveStatus"
+	TaskRouterAdminService_RegisterAttribute_FullMethodName          = "/taskrouter.v1.TaskRouterAdminService/RegisterAttribute"
+	TaskRouterAdminService_ListAttributes_FullMethodName             = "/taskrouter.v1.TaskRouterAdminService/ListAttributes"
+	TaskRouterAdminService_GetAttribute_FullMethodName               = "/taskrouter.v1.TaskRouterAdminService/GetAttribute"
+	TaskRouterAdminService_RemoveAttribute_FullMethodName            = "/taskrouter.v1.TaskRouterAdminService/RemoveAttribute"
+	TaskRouterAdminService_RegisterDisposition_FullMethodName        = "/taskrouter.v1.TaskRouterAdminService/RegisterDisposition"
+	TaskRouterAdminService_ListDispositions_FullMethodName           = "/taskrouter.v1.TaskRouterAdminService/ListDispositions"
+	TaskRouterAdminService_RemoveDisposition_FullMethodName          = "/taskrouter.v1.TaskRouterAdminService/RemoveDisposition"
+	TaskRouterAdminService_AssociateQueueDispositions_FullMethodName = "/taskrouter.v1.TaskRouterAdminService/AssociateQueueDispositions"
+	TaskRouterAdminService_ListQueueDispositions_FullMethodName      = "/taskrouter.v1.TaskRouterAdminService/ListQueueDispositions"
 )
 
 // TaskRouterAdminServiceClient is the client API for TaskRouterAdminService service.
@@ -77,6 +82,23 @@ type TaskRouterAdminServiceClient interface {
 	// RemoveAttribute retires a named field. Existing agent/task values
 	// referencing it are unaffected; removal only blocks future use.
 	RemoveAttribute(ctx context.Context, in *RemoveAttributeRequest, opts ...grpc.CallOption) (*RemoveAttributeResponse, error)
+	// RegisterDisposition defines a new disposition value. Rejected if a
+	// disposition with this ID already exists.
+	RegisterDisposition(ctx context.Context, in *RegisterDispositionRequest, opts ...grpc.CallOption) (*Disposition, error)
+	// ListDispositions enumerates every disposition registered for the
+	// tenant.
+	ListDispositions(ctx context.Context, in *ListDispositionsRequest, opts ...grpc.CallOption) (*ListDispositionsResponse, error)
+	// RemoveDisposition retires a disposition. Tasks that already carry this
+	// disposition_id are unaffected (their denormalized disposition_name is
+	// untouched); removal only blocks future use via SetTaskDisposition, and
+	// this disposition is dropped from every queue association.
+	RemoveDisposition(ctx context.Context, in *RemoveDispositionRequest, opts ...grpc.CallOption) (*RemoveDispositionResponse, error)
+	// AssociateQueueDispositions fully replaces the set of dispositions
+	// available to agents working a given queue.
+	AssociateQueueDispositions(ctx context.Context, in *AssociateQueueDispositionsRequest, opts ...grpc.CallOption) (*AssociateQueueDispositionsResponse, error)
+	// ListQueueDispositions returns the dispositions currently associated to
+	// one queue.
+	ListQueueDispositions(ctx context.Context, in *ListQueueDispositionsRequest, opts ...grpc.CallOption) (*ListQueueDispositionsResponse, error)
 }
 
 type taskRouterAdminServiceClient struct {
@@ -197,6 +219,56 @@ func (c *taskRouterAdminServiceClient) RemoveAttribute(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *taskRouterAdminServiceClient) RegisterDisposition(ctx context.Context, in *RegisterDispositionRequest, opts ...grpc.CallOption) (*Disposition, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Disposition)
+	err := c.cc.Invoke(ctx, TaskRouterAdminService_RegisterDisposition_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskRouterAdminServiceClient) ListDispositions(ctx context.Context, in *ListDispositionsRequest, opts ...grpc.CallOption) (*ListDispositionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDispositionsResponse)
+	err := c.cc.Invoke(ctx, TaskRouterAdminService_ListDispositions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskRouterAdminServiceClient) RemoveDisposition(ctx context.Context, in *RemoveDispositionRequest, opts ...grpc.CallOption) (*RemoveDispositionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveDispositionResponse)
+	err := c.cc.Invoke(ctx, TaskRouterAdminService_RemoveDisposition_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskRouterAdminServiceClient) AssociateQueueDispositions(ctx context.Context, in *AssociateQueueDispositionsRequest, opts ...grpc.CallOption) (*AssociateQueueDispositionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AssociateQueueDispositionsResponse)
+	err := c.cc.Invoke(ctx, TaskRouterAdminService_AssociateQueueDispositions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskRouterAdminServiceClient) ListQueueDispositions(ctx context.Context, in *ListQueueDispositionsRequest, opts ...grpc.CallOption) (*ListQueueDispositionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListQueueDispositionsResponse)
+	err := c.cc.Invoke(ctx, TaskRouterAdminService_ListQueueDispositions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TaskRouterAdminServiceServer is the server API for TaskRouterAdminService service.
 // All implementations must embed UnimplementedTaskRouterAdminServiceServer
 // for forward compatibility.
@@ -242,6 +314,23 @@ type TaskRouterAdminServiceServer interface {
 	// RemoveAttribute retires a named field. Existing agent/task values
 	// referencing it are unaffected; removal only blocks future use.
 	RemoveAttribute(context.Context, *RemoveAttributeRequest) (*RemoveAttributeResponse, error)
+	// RegisterDisposition defines a new disposition value. Rejected if a
+	// disposition with this ID already exists.
+	RegisterDisposition(context.Context, *RegisterDispositionRequest) (*Disposition, error)
+	// ListDispositions enumerates every disposition registered for the
+	// tenant.
+	ListDispositions(context.Context, *ListDispositionsRequest) (*ListDispositionsResponse, error)
+	// RemoveDisposition retires a disposition. Tasks that already carry this
+	// disposition_id are unaffected (their denormalized disposition_name is
+	// untouched); removal only blocks future use via SetTaskDisposition, and
+	// this disposition is dropped from every queue association.
+	RemoveDisposition(context.Context, *RemoveDispositionRequest) (*RemoveDispositionResponse, error)
+	// AssociateQueueDispositions fully replaces the set of dispositions
+	// available to agents working a given queue.
+	AssociateQueueDispositions(context.Context, *AssociateQueueDispositionsRequest) (*AssociateQueueDispositionsResponse, error)
+	// ListQueueDispositions returns the dispositions currently associated to
+	// one queue.
+	ListQueueDispositions(context.Context, *ListQueueDispositionsRequest) (*ListQueueDispositionsResponse, error)
 	mustEmbedUnimplementedTaskRouterAdminServiceServer()
 }
 
@@ -284,6 +373,21 @@ func (UnimplementedTaskRouterAdminServiceServer) GetAttribute(context.Context, *
 }
 func (UnimplementedTaskRouterAdminServiceServer) RemoveAttribute(context.Context, *RemoveAttributeRequest) (*RemoveAttributeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveAttribute not implemented")
+}
+func (UnimplementedTaskRouterAdminServiceServer) RegisterDisposition(context.Context, *RegisterDispositionRequest) (*Disposition, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterDisposition not implemented")
+}
+func (UnimplementedTaskRouterAdminServiceServer) ListDispositions(context.Context, *ListDispositionsRequest) (*ListDispositionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDispositions not implemented")
+}
+func (UnimplementedTaskRouterAdminServiceServer) RemoveDisposition(context.Context, *RemoveDispositionRequest) (*RemoveDispositionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveDisposition not implemented")
+}
+func (UnimplementedTaskRouterAdminServiceServer) AssociateQueueDispositions(context.Context, *AssociateQueueDispositionsRequest) (*AssociateQueueDispositionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AssociateQueueDispositions not implemented")
+}
+func (UnimplementedTaskRouterAdminServiceServer) ListQueueDispositions(context.Context, *ListQueueDispositionsRequest) (*ListQueueDispositionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListQueueDispositions not implemented")
 }
 func (UnimplementedTaskRouterAdminServiceServer) mustEmbedUnimplementedTaskRouterAdminServiceServer() {
 }
@@ -505,6 +609,96 @@ func _TaskRouterAdminService_RemoveAttribute_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskRouterAdminService_RegisterDisposition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterDispositionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterAdminServiceServer).RegisterDisposition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterAdminService_RegisterDisposition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterAdminServiceServer).RegisterDisposition(ctx, req.(*RegisterDispositionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskRouterAdminService_ListDispositions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDispositionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterAdminServiceServer).ListDispositions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterAdminService_ListDispositions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterAdminServiceServer).ListDispositions(ctx, req.(*ListDispositionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskRouterAdminService_RemoveDisposition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveDispositionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterAdminServiceServer).RemoveDisposition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterAdminService_RemoveDisposition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterAdminServiceServer).RemoveDisposition(ctx, req.(*RemoveDispositionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskRouterAdminService_AssociateQueueDispositions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AssociateQueueDispositionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterAdminServiceServer).AssociateQueueDispositions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterAdminService_AssociateQueueDispositions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterAdminServiceServer).AssociateQueueDispositions(ctx, req.(*AssociateQueueDispositionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskRouterAdminService_ListQueueDispositions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListQueueDispositionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterAdminServiceServer).ListQueueDispositions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterAdminService_ListQueueDispositions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterAdminServiceServer).ListQueueDispositions(ctx, req.(*ListQueueDispositionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TaskRouterAdminService_ServiceDesc is the grpc.ServiceDesc for TaskRouterAdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -555,6 +749,26 @@ var TaskRouterAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveAttribute",
 			Handler:    _TaskRouterAdminService_RemoveAttribute_Handler,
+		},
+		{
+			MethodName: "RegisterDisposition",
+			Handler:    _TaskRouterAdminService_RegisterDisposition_Handler,
+		},
+		{
+			MethodName: "ListDispositions",
+			Handler:    _TaskRouterAdminService_ListDispositions_Handler,
+		},
+		{
+			MethodName: "RemoveDisposition",
+			Handler:    _TaskRouterAdminService_RemoveDisposition_Handler,
+		},
+		{
+			MethodName: "AssociateQueueDispositions",
+			Handler:    _TaskRouterAdminService_AssociateQueueDispositions_Handler,
+		},
+		{
+			MethodName: "ListQueueDispositions",
+			Handler:    _TaskRouterAdminService_ListQueueDispositions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

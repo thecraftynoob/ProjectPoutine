@@ -16,12 +16,13 @@ type StatusEntry struct {
 }
 
 // DefaultStatuses is the seed vocabulary from spec Section 2.5: "Seeded
-// on first run with four defaults." Seeding happens per-tenant at the
-// application layer (EnsureDefaultStatuses), not in a schema migration,
-// since a migration runs once at deploy time before any tenant
-// necessarily exists -- see migrations/002_status_registry.sql's header
-// comment for the reasoning.
-var DefaultStatuses = []string{"Available", "Break", "Offline", "Not Responding"}
+// on first run with four defaults," plus "WrapUp" -- the system-assigned
+// status applied as a side effect of EndTask (Wrap Up / Disposition
+// two-step completion lifecycle), seeded here for the same reason
+// "Not Responding" is: so it shows up in the registry's listing even
+// though the system-assignment path itself (redisdomain's Lua scripts)
+// writes it directly and never calls StatusExists.
+var DefaultStatuses = []string{"Available", "Break", "Offline", "Not Responding", "WrapUp"}
 
 // EnsureDefaultStatuses idempotently seeds the four default statuses for
 // a tenant if its Status registry is currently empty. Called once at

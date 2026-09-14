@@ -1055,6 +1055,462 @@ func (*RemoveAttributeResponse) Descriptor() ([]byte, []int) {
 	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{21}
 }
 
+// Disposition is a tenant-defined tag selectable by an agent during a
+// task's WrapUp status, for historical reporting (see
+// TaskRouterService.SetTaskDisposition).
+type Disposition struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DispositionId string                 `protobuf:"bytes,1,opt,name=disposition_id,json=dispositionId,proto3" json:"disposition_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Disposition) Reset() {
+	*x = Disposition{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Disposition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Disposition) ProtoMessage() {}
+
+func (x *Disposition) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Disposition.ProtoReflect.Descriptor instead.
+func (*Disposition) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *Disposition) GetDispositionId() string {
+	if x != nil {
+		return x.DispositionId
+	}
+	return ""
+}
+
+func (x *Disposition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Disposition) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type RegisterDispositionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional; server-generated if empty.
+	DispositionId string `protobuf:"bytes,1,opt,name=disposition_id,json=dispositionId,proto3" json:"disposition_id,omitempty"`
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterDispositionRequest) Reset() {
+	*x = RegisterDispositionRequest{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterDispositionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterDispositionRequest) ProtoMessage() {}
+
+func (x *RegisterDispositionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterDispositionRequest.ProtoReflect.Descriptor instead.
+func (*RegisterDispositionRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *RegisterDispositionRequest) GetDispositionId() string {
+	if x != nil {
+		return x.DispositionId
+	}
+	return ""
+}
+
+func (x *RegisterDispositionRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ListDispositionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDispositionsRequest) Reset() {
+	*x = ListDispositionsRequest{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDispositionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDispositionsRequest) ProtoMessage() {}
+
+func (x *ListDispositionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDispositionsRequest.ProtoReflect.Descriptor instead.
+func (*ListDispositionsRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{24}
+}
+
+type ListDispositionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dispositions  []*Disposition         `protobuf:"bytes,1,rep,name=dispositions,proto3" json:"dispositions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDispositionsResponse) Reset() {
+	*x = ListDispositionsResponse{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDispositionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDispositionsResponse) ProtoMessage() {}
+
+func (x *ListDispositionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDispositionsResponse.ProtoReflect.Descriptor instead.
+func (*ListDispositionsResponse) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListDispositionsResponse) GetDispositions() []*Disposition {
+	if x != nil {
+		return x.Dispositions
+	}
+	return nil
+}
+
+type RemoveDispositionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DispositionId string                 `protobuf:"bytes,1,opt,name=disposition_id,json=dispositionId,proto3" json:"disposition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveDispositionRequest) Reset() {
+	*x = RemoveDispositionRequest{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveDispositionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveDispositionRequest) ProtoMessage() {}
+
+func (x *RemoveDispositionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveDispositionRequest.ProtoReflect.Descriptor instead.
+func (*RemoveDispositionRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *RemoveDispositionRequest) GetDispositionId() string {
+	if x != nil {
+		return x.DispositionId
+	}
+	return ""
+}
+
+type RemoveDispositionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveDispositionResponse) Reset() {
+	*x = RemoveDispositionResponse{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveDispositionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveDispositionResponse) ProtoMessage() {}
+
+func (x *RemoveDispositionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveDispositionResponse.ProtoReflect.Descriptor instead.
+func (*RemoveDispositionResponse) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{27}
+}
+
+type AssociateQueueDispositionsRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	QueueId string                 `protobuf:"bytes,1,opt,name=queue_id,json=queueId,proto3" json:"queue_id,omitempty"`
+	// Full replacement list of disposition_ids available to this queue.
+	// Rejected entirely (no partial application) if any disposition_id
+	// doesn't exist -- mirrors ReplaceAgentQueues' full-replace/all-or-
+	// nothing convention (TaskRouterService.ReplaceAgentQueues).
+	DispositionIds []string `protobuf:"bytes,2,rep,name=disposition_ids,json=dispositionIds,proto3" json:"disposition_ids,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AssociateQueueDispositionsRequest) Reset() {
+	*x = AssociateQueueDispositionsRequest{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssociateQueueDispositionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssociateQueueDispositionsRequest) ProtoMessage() {}
+
+func (x *AssociateQueueDispositionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssociateQueueDispositionsRequest.ProtoReflect.Descriptor instead.
+func (*AssociateQueueDispositionsRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *AssociateQueueDispositionsRequest) GetQueueId() string {
+	if x != nil {
+		return x.QueueId
+	}
+	return ""
+}
+
+func (x *AssociateQueueDispositionsRequest) GetDispositionIds() []string {
+	if x != nil {
+		return x.DispositionIds
+	}
+	return nil
+}
+
+type AssociateQueueDispositionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssociateQueueDispositionsResponse) Reset() {
+	*x = AssociateQueueDispositionsResponse{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssociateQueueDispositionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssociateQueueDispositionsResponse) ProtoMessage() {}
+
+func (x *AssociateQueueDispositionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssociateQueueDispositionsResponse.ProtoReflect.Descriptor instead.
+func (*AssociateQueueDispositionsResponse) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{29}
+}
+
+type ListQueueDispositionsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	QueueId       string                 `protobuf:"bytes,1,opt,name=queue_id,json=queueId,proto3" json:"queue_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListQueueDispositionsRequest) Reset() {
+	*x = ListQueueDispositionsRequest{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListQueueDispositionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListQueueDispositionsRequest) ProtoMessage() {}
+
+func (x *ListQueueDispositionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListQueueDispositionsRequest.ProtoReflect.Descriptor instead.
+func (*ListQueueDispositionsRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ListQueueDispositionsRequest) GetQueueId() string {
+	if x != nil {
+		return x.QueueId
+	}
+	return ""
+}
+
+type ListQueueDispositionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dispositions  []*Disposition         `protobuf:"bytes,1,rep,name=dispositions,proto3" json:"dispositions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListQueueDispositionsResponse) Reset() {
+	*x = ListQueueDispositionsResponse{}
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListQueueDispositionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListQueueDispositionsResponse) ProtoMessage() {}
+
+func (x *ListQueueDispositionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_admin_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListQueueDispositionsResponse.ProtoReflect.Descriptor instead.
+func (*ListQueueDispositionsResponse) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_admin_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListQueueDispositionsResponse) GetDispositions() []*Disposition {
+	if x != nil {
+		return x.Dispositions
+	}
+	return nil
+}
+
 var File_task_router_v1_task_router_admin_proto protoreflect.FileDescriptor
 
 const file_task_router_v1_task_router_admin_proto_rawDesc = "" +
@@ -1109,12 +1565,33 @@ const file_task_router_v1_task_router_admin_proto_rawDesc = "" +
 	"\x12assigned_agent_ids\x18\x02 \x03(\tR\x10assignedAgentIds\",\n" +
 	"\x16RemoveAttributeRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"\x19\n" +
-	"\x17RemoveAttributeResponse*g\n" +
+	"\x17RemoveAttributeResponse\"\x83\x01\n" +
+	"\vDisposition\x12%\n" +
+	"\x0edisposition_id\x18\x01 \x01(\tR\rdispositionId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x129\n" +
+	"\n" +
+	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"W\n" +
+	"\x1aRegisterDispositionRequest\x12%\n" +
+	"\x0edisposition_id\x18\x01 \x01(\tR\rdispositionId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x19\n" +
+	"\x17ListDispositionsRequest\"Z\n" +
+	"\x18ListDispositionsResponse\x12>\n" +
+	"\fdispositions\x18\x01 \x03(\v2\x1a.taskrouter.v1.DispositionR\fdispositions\"A\n" +
+	"\x18RemoveDispositionRequest\x12%\n" +
+	"\x0edisposition_id\x18\x01 \x01(\tR\rdispositionId\"\x1b\n" +
+	"\x19RemoveDispositionResponse\"g\n" +
+	"!AssociateQueueDispositionsRequest\x12\x19\n" +
+	"\bqueue_id\x18\x01 \x01(\tR\aqueueId\x12'\n" +
+	"\x0fdisposition_ids\x18\x02 \x03(\tR\x0edispositionIds\"$\n" +
+	"\"AssociateQueueDispositionsResponse\"9\n" +
+	"\x1cListQueueDispositionsRequest\x12\x19\n" +
+	"\bqueue_id\x18\x01 \x01(\tR\aqueueId\"_\n" +
+	"\x1dListQueueDispositionsResponse\x12>\n" +
+	"\fdispositions\x18\x01 \x03(\v2\x1a.taskrouter.v1.DispositionR\fdispositions*g\n" +
 	"\rAttributeType\x12\x1e\n" +
 	"\x1aATTRIBUTE_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16ATTRIBUTE_TYPE_NUMERIC\x10\x01\x12\x1a\n" +
-	"\x16ATTRIBUTE_TYPE_BOOLEAN\x10\x022\xc8\n" +
-	"\n" +
+	"\x16ATTRIBUTE_TYPE_BOOLEAN\x10\x022\xc9\x10\n" +
 	"\x16TaskRouterAdminService\x12g\n" +
 	"\rRegisterQueue\x12#.taskrouter.v1.RegisterQueueRequest\x1a\x14.taskrouter.v1.Queue\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/admin/queues\x12k\n" +
 	"\n" +
@@ -1127,7 +1604,12 @@ const file_task_router_v1_task_router_admin_proto_rawDesc = "" +
 	"\x11RegisterAttribute\x12'.taskrouter.v1.RegisterAttributeRequest\x1a\".taskrouter.v1.AttributeDefinition\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/admin/attributes\x12{\n" +
 	"\x0eListAttributes\x12$.taskrouter.v1.ListAttributesRequest\x1a%.taskrouter.v1.ListAttributesResponse\"\x1c\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/admin/attributes\x12|\n" +
 	"\fGetAttribute\x12\".taskrouter.v1.GetAttributeRequest\x1a#.taskrouter.v1.GetAttributeResponse\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/admin/attributes/{name}\x12\x85\x01\n" +
-	"\x0fRemoveAttribute\x12%.taskrouter.v1.RemoveAttributeRequest\x1a&.taskrouter.v1.RemoveAttributeResponse\"#\x82\xd3\xe4\x93\x02\x1d*\x1b/v1/admin/attributes/{name}BRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
+	"\x0fRemoveAttribute\x12%.taskrouter.v1.RemoveAttributeRequest\x1a&.taskrouter.v1.RemoveAttributeResponse\"#\x82\xd3\xe4\x93\x02\x1d*\x1b/v1/admin/attributes/{name}\x12\x7f\n" +
+	"\x13RegisterDisposition\x12).taskrouter.v1.RegisterDispositionRequest\x1a\x1a.taskrouter.v1.Disposition\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/admin/dispositions\x12\x83\x01\n" +
+	"\x10ListDispositions\x12&.taskrouter.v1.ListDispositionsRequest\x1a'.taskrouter.v1.ListDispositionsResponse\"\x1e\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/admin/dispositions\x12\x97\x01\n" +
+	"\x11RemoveDisposition\x12'.taskrouter.v1.RemoveDispositionRequest\x1a(.taskrouter.v1.RemoveDispositionResponse\"/\x82\xd3\xe4\x93\x02)*'/v1/admin/dispositions/{disposition_id}\x12\xb6\x01\n" +
+	"\x1aAssociateQueueDispositions\x120.taskrouter.v1.AssociateQueueDispositionsRequest\x1a1.taskrouter.v1.AssociateQueueDispositionsResponse\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/admin/queues/{queue_id}/dispositions\x12\xa4\x01\n" +
+	"\x15ListQueueDispositions\x12+.taskrouter.v1.ListQueueDispositionsRequest\x1a,.taskrouter.v1.ListQueueDispositionsResponse\"0\x82\xd3\xe4\x93\x02*\x12(/v1/admin/queues/{queue_id}/dispositionsBRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
 
 var (
 	file_task_router_v1_task_router_admin_proto_rawDescOnce sync.Once
@@ -1142,71 +1624,94 @@ func file_task_router_v1_task_router_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_task_router_v1_task_router_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_task_router_v1_task_router_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_task_router_v1_task_router_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_task_router_v1_task_router_admin_proto_goTypes = []any{
-	(AttributeType)(0),               // 0: taskrouter.v1.AttributeType
-	(*Queue)(nil),                    // 1: taskrouter.v1.Queue
-	(*StatusEntry)(nil),              // 2: taskrouter.v1.StatusEntry
-	(*AttributeDefinition)(nil),      // 3: taskrouter.v1.AttributeDefinition
-	(*RegisterQueueRequest)(nil),     // 4: taskrouter.v1.RegisterQueueRequest
-	(*ListQueuesRequest)(nil),        // 5: taskrouter.v1.ListQueuesRequest
-	(*ListQueuesResponse)(nil),       // 6: taskrouter.v1.ListQueuesResponse
-	(*GetQueueRequest)(nil),          // 7: taskrouter.v1.GetQueueRequest
-	(*GetQueueResponse)(nil),         // 8: taskrouter.v1.GetQueueResponse
-	(*RemoveQueueRequest)(nil),       // 9: taskrouter.v1.RemoveQueueRequest
-	(*RemoveQueueResponse)(nil),      // 10: taskrouter.v1.RemoveQueueResponse
-	(*RegisterStatusRequest)(nil),    // 11: taskrouter.v1.RegisterStatusRequest
-	(*ListStatusesRequest)(nil),      // 12: taskrouter.v1.ListStatusesRequest
-	(*ListStatusesResponse)(nil),     // 13: taskrouter.v1.ListStatusesResponse
-	(*RemoveStatusRequest)(nil),      // 14: taskrouter.v1.RemoveStatusRequest
-	(*RemoveStatusResponse)(nil),     // 15: taskrouter.v1.RemoveStatusResponse
-	(*RegisterAttributeRequest)(nil), // 16: taskrouter.v1.RegisterAttributeRequest
-	(*ListAttributesRequest)(nil),    // 17: taskrouter.v1.ListAttributesRequest
-	(*ListAttributesResponse)(nil),   // 18: taskrouter.v1.ListAttributesResponse
-	(*GetAttributeRequest)(nil),      // 19: taskrouter.v1.GetAttributeRequest
-	(*GetAttributeResponse)(nil),     // 20: taskrouter.v1.GetAttributeResponse
-	(*RemoveAttributeRequest)(nil),   // 21: taskrouter.v1.RemoveAttributeRequest
-	(*RemoveAttributeResponse)(nil),  // 22: taskrouter.v1.RemoveAttributeResponse
-	(*timestamppb.Timestamp)(nil),    // 23: google.protobuf.Timestamp
+	(AttributeType)(0),                         // 0: taskrouter.v1.AttributeType
+	(*Queue)(nil),                              // 1: taskrouter.v1.Queue
+	(*StatusEntry)(nil),                        // 2: taskrouter.v1.StatusEntry
+	(*AttributeDefinition)(nil),                // 3: taskrouter.v1.AttributeDefinition
+	(*RegisterQueueRequest)(nil),               // 4: taskrouter.v1.RegisterQueueRequest
+	(*ListQueuesRequest)(nil),                  // 5: taskrouter.v1.ListQueuesRequest
+	(*ListQueuesResponse)(nil),                 // 6: taskrouter.v1.ListQueuesResponse
+	(*GetQueueRequest)(nil),                    // 7: taskrouter.v1.GetQueueRequest
+	(*GetQueueResponse)(nil),                   // 8: taskrouter.v1.GetQueueResponse
+	(*RemoveQueueRequest)(nil),                 // 9: taskrouter.v1.RemoveQueueRequest
+	(*RemoveQueueResponse)(nil),                // 10: taskrouter.v1.RemoveQueueResponse
+	(*RegisterStatusRequest)(nil),              // 11: taskrouter.v1.RegisterStatusRequest
+	(*ListStatusesRequest)(nil),                // 12: taskrouter.v1.ListStatusesRequest
+	(*ListStatusesResponse)(nil),               // 13: taskrouter.v1.ListStatusesResponse
+	(*RemoveStatusRequest)(nil),                // 14: taskrouter.v1.RemoveStatusRequest
+	(*RemoveStatusResponse)(nil),               // 15: taskrouter.v1.RemoveStatusResponse
+	(*RegisterAttributeRequest)(nil),           // 16: taskrouter.v1.RegisterAttributeRequest
+	(*ListAttributesRequest)(nil),              // 17: taskrouter.v1.ListAttributesRequest
+	(*ListAttributesResponse)(nil),             // 18: taskrouter.v1.ListAttributesResponse
+	(*GetAttributeRequest)(nil),                // 19: taskrouter.v1.GetAttributeRequest
+	(*GetAttributeResponse)(nil),               // 20: taskrouter.v1.GetAttributeResponse
+	(*RemoveAttributeRequest)(nil),             // 21: taskrouter.v1.RemoveAttributeRequest
+	(*RemoveAttributeResponse)(nil),            // 22: taskrouter.v1.RemoveAttributeResponse
+	(*Disposition)(nil),                        // 23: taskrouter.v1.Disposition
+	(*RegisterDispositionRequest)(nil),         // 24: taskrouter.v1.RegisterDispositionRequest
+	(*ListDispositionsRequest)(nil),            // 25: taskrouter.v1.ListDispositionsRequest
+	(*ListDispositionsResponse)(nil),           // 26: taskrouter.v1.ListDispositionsResponse
+	(*RemoveDispositionRequest)(nil),           // 27: taskrouter.v1.RemoveDispositionRequest
+	(*RemoveDispositionResponse)(nil),          // 28: taskrouter.v1.RemoveDispositionResponse
+	(*AssociateQueueDispositionsRequest)(nil),  // 29: taskrouter.v1.AssociateQueueDispositionsRequest
+	(*AssociateQueueDispositionsResponse)(nil), // 30: taskrouter.v1.AssociateQueueDispositionsResponse
+	(*ListQueueDispositionsRequest)(nil),       // 31: taskrouter.v1.ListQueueDispositionsRequest
+	(*ListQueueDispositionsResponse)(nil),      // 32: taskrouter.v1.ListQueueDispositionsResponse
+	(*timestamppb.Timestamp)(nil),              // 33: google.protobuf.Timestamp
 }
 var file_task_router_v1_task_router_admin_proto_depIdxs = []int32{
-	23, // 0: taskrouter.v1.Queue.created_at:type_name -> google.protobuf.Timestamp
-	23, // 1: taskrouter.v1.StatusEntry.created_at:type_name -> google.protobuf.Timestamp
+	33, // 0: taskrouter.v1.Queue.created_at:type_name -> google.protobuf.Timestamp
+	33, // 1: taskrouter.v1.StatusEntry.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: taskrouter.v1.AttributeDefinition.type:type_name -> taskrouter.v1.AttributeType
-	23, // 3: taskrouter.v1.AttributeDefinition.created_at:type_name -> google.protobuf.Timestamp
+	33, // 3: taskrouter.v1.AttributeDefinition.created_at:type_name -> google.protobuf.Timestamp
 	1,  // 4: taskrouter.v1.ListQueuesResponse.queues:type_name -> taskrouter.v1.Queue
 	1,  // 5: taskrouter.v1.GetQueueResponse.queue:type_name -> taskrouter.v1.Queue
 	2,  // 6: taskrouter.v1.ListStatusesResponse.statuses:type_name -> taskrouter.v1.StatusEntry
 	0,  // 7: taskrouter.v1.RegisterAttributeRequest.type:type_name -> taskrouter.v1.AttributeType
 	3,  // 8: taskrouter.v1.ListAttributesResponse.attributes:type_name -> taskrouter.v1.AttributeDefinition
 	3,  // 9: taskrouter.v1.GetAttributeResponse.attribute:type_name -> taskrouter.v1.AttributeDefinition
-	4,  // 10: taskrouter.v1.TaskRouterAdminService.RegisterQueue:input_type -> taskrouter.v1.RegisterQueueRequest
-	5,  // 11: taskrouter.v1.TaskRouterAdminService.ListQueues:input_type -> taskrouter.v1.ListQueuesRequest
-	7,  // 12: taskrouter.v1.TaskRouterAdminService.GetQueue:input_type -> taskrouter.v1.GetQueueRequest
-	9,  // 13: taskrouter.v1.TaskRouterAdminService.RemoveQueue:input_type -> taskrouter.v1.RemoveQueueRequest
-	11, // 14: taskrouter.v1.TaskRouterAdminService.RegisterStatus:input_type -> taskrouter.v1.RegisterStatusRequest
-	12, // 15: taskrouter.v1.TaskRouterAdminService.ListStatuses:input_type -> taskrouter.v1.ListStatusesRequest
-	14, // 16: taskrouter.v1.TaskRouterAdminService.RemoveStatus:input_type -> taskrouter.v1.RemoveStatusRequest
-	16, // 17: taskrouter.v1.TaskRouterAdminService.RegisterAttribute:input_type -> taskrouter.v1.RegisterAttributeRequest
-	17, // 18: taskrouter.v1.TaskRouterAdminService.ListAttributes:input_type -> taskrouter.v1.ListAttributesRequest
-	19, // 19: taskrouter.v1.TaskRouterAdminService.GetAttribute:input_type -> taskrouter.v1.GetAttributeRequest
-	21, // 20: taskrouter.v1.TaskRouterAdminService.RemoveAttribute:input_type -> taskrouter.v1.RemoveAttributeRequest
-	1,  // 21: taskrouter.v1.TaskRouterAdminService.RegisterQueue:output_type -> taskrouter.v1.Queue
-	6,  // 22: taskrouter.v1.TaskRouterAdminService.ListQueues:output_type -> taskrouter.v1.ListQueuesResponse
-	8,  // 23: taskrouter.v1.TaskRouterAdminService.GetQueue:output_type -> taskrouter.v1.GetQueueResponse
-	10, // 24: taskrouter.v1.TaskRouterAdminService.RemoveQueue:output_type -> taskrouter.v1.RemoveQueueResponse
-	2,  // 25: taskrouter.v1.TaskRouterAdminService.RegisterStatus:output_type -> taskrouter.v1.StatusEntry
-	13, // 26: taskrouter.v1.TaskRouterAdminService.ListStatuses:output_type -> taskrouter.v1.ListStatusesResponse
-	15, // 27: taskrouter.v1.TaskRouterAdminService.RemoveStatus:output_type -> taskrouter.v1.RemoveStatusResponse
-	3,  // 28: taskrouter.v1.TaskRouterAdminService.RegisterAttribute:output_type -> taskrouter.v1.AttributeDefinition
-	18, // 29: taskrouter.v1.TaskRouterAdminService.ListAttributes:output_type -> taskrouter.v1.ListAttributesResponse
-	20, // 30: taskrouter.v1.TaskRouterAdminService.GetAttribute:output_type -> taskrouter.v1.GetAttributeResponse
-	22, // 31: taskrouter.v1.TaskRouterAdminService.RemoveAttribute:output_type -> taskrouter.v1.RemoveAttributeResponse
-	21, // [21:32] is the sub-list for method output_type
-	10, // [10:21] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	33, // 10: taskrouter.v1.Disposition.created_at:type_name -> google.protobuf.Timestamp
+	23, // 11: taskrouter.v1.ListDispositionsResponse.dispositions:type_name -> taskrouter.v1.Disposition
+	23, // 12: taskrouter.v1.ListQueueDispositionsResponse.dispositions:type_name -> taskrouter.v1.Disposition
+	4,  // 13: taskrouter.v1.TaskRouterAdminService.RegisterQueue:input_type -> taskrouter.v1.RegisterQueueRequest
+	5,  // 14: taskrouter.v1.TaskRouterAdminService.ListQueues:input_type -> taskrouter.v1.ListQueuesRequest
+	7,  // 15: taskrouter.v1.TaskRouterAdminService.GetQueue:input_type -> taskrouter.v1.GetQueueRequest
+	9,  // 16: taskrouter.v1.TaskRouterAdminService.RemoveQueue:input_type -> taskrouter.v1.RemoveQueueRequest
+	11, // 17: taskrouter.v1.TaskRouterAdminService.RegisterStatus:input_type -> taskrouter.v1.RegisterStatusRequest
+	12, // 18: taskrouter.v1.TaskRouterAdminService.ListStatuses:input_type -> taskrouter.v1.ListStatusesRequest
+	14, // 19: taskrouter.v1.TaskRouterAdminService.RemoveStatus:input_type -> taskrouter.v1.RemoveStatusRequest
+	16, // 20: taskrouter.v1.TaskRouterAdminService.RegisterAttribute:input_type -> taskrouter.v1.RegisterAttributeRequest
+	17, // 21: taskrouter.v1.TaskRouterAdminService.ListAttributes:input_type -> taskrouter.v1.ListAttributesRequest
+	19, // 22: taskrouter.v1.TaskRouterAdminService.GetAttribute:input_type -> taskrouter.v1.GetAttributeRequest
+	21, // 23: taskrouter.v1.TaskRouterAdminService.RemoveAttribute:input_type -> taskrouter.v1.RemoveAttributeRequest
+	24, // 24: taskrouter.v1.TaskRouterAdminService.RegisterDisposition:input_type -> taskrouter.v1.RegisterDispositionRequest
+	25, // 25: taskrouter.v1.TaskRouterAdminService.ListDispositions:input_type -> taskrouter.v1.ListDispositionsRequest
+	27, // 26: taskrouter.v1.TaskRouterAdminService.RemoveDisposition:input_type -> taskrouter.v1.RemoveDispositionRequest
+	29, // 27: taskrouter.v1.TaskRouterAdminService.AssociateQueueDispositions:input_type -> taskrouter.v1.AssociateQueueDispositionsRequest
+	31, // 28: taskrouter.v1.TaskRouterAdminService.ListQueueDispositions:input_type -> taskrouter.v1.ListQueueDispositionsRequest
+	1,  // 29: taskrouter.v1.TaskRouterAdminService.RegisterQueue:output_type -> taskrouter.v1.Queue
+	6,  // 30: taskrouter.v1.TaskRouterAdminService.ListQueues:output_type -> taskrouter.v1.ListQueuesResponse
+	8,  // 31: taskrouter.v1.TaskRouterAdminService.GetQueue:output_type -> taskrouter.v1.GetQueueResponse
+	10, // 32: taskrouter.v1.TaskRouterAdminService.RemoveQueue:output_type -> taskrouter.v1.RemoveQueueResponse
+	2,  // 33: taskrouter.v1.TaskRouterAdminService.RegisterStatus:output_type -> taskrouter.v1.StatusEntry
+	13, // 34: taskrouter.v1.TaskRouterAdminService.ListStatuses:output_type -> taskrouter.v1.ListStatusesResponse
+	15, // 35: taskrouter.v1.TaskRouterAdminService.RemoveStatus:output_type -> taskrouter.v1.RemoveStatusResponse
+	3,  // 36: taskrouter.v1.TaskRouterAdminService.RegisterAttribute:output_type -> taskrouter.v1.AttributeDefinition
+	18, // 37: taskrouter.v1.TaskRouterAdminService.ListAttributes:output_type -> taskrouter.v1.ListAttributesResponse
+	20, // 38: taskrouter.v1.TaskRouterAdminService.GetAttribute:output_type -> taskrouter.v1.GetAttributeResponse
+	22, // 39: taskrouter.v1.TaskRouterAdminService.RemoveAttribute:output_type -> taskrouter.v1.RemoveAttributeResponse
+	23, // 40: taskrouter.v1.TaskRouterAdminService.RegisterDisposition:output_type -> taskrouter.v1.Disposition
+	26, // 41: taskrouter.v1.TaskRouterAdminService.ListDispositions:output_type -> taskrouter.v1.ListDispositionsResponse
+	28, // 42: taskrouter.v1.TaskRouterAdminService.RemoveDisposition:output_type -> taskrouter.v1.RemoveDispositionResponse
+	30, // 43: taskrouter.v1.TaskRouterAdminService.AssociateQueueDispositions:output_type -> taskrouter.v1.AssociateQueueDispositionsResponse
+	32, // 44: taskrouter.v1.TaskRouterAdminService.ListQueueDispositions:output_type -> taskrouter.v1.ListQueueDispositionsResponse
+	29, // [29:45] is the sub-list for method output_type
+	13, // [13:29] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_task_router_v1_task_router_admin_proto_init() }
@@ -1220,7 +1725,7 @@ func file_task_router_v1_task_router_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_task_router_v1_task_router_admin_proto_rawDesc), len(file_task_router_v1_task_router_admin_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   22,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

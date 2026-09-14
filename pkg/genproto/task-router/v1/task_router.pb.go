@@ -296,7 +296,8 @@ func (x *Agent) GetUserId() string {
 	return ""
 }
 
-// Task mirrors spec Section 2.2 exactly.
+// Task mirrors spec Section 2.2, extended with the Wrap Up / Disposition
+// two-step completion lifecycle.
 type Task struct {
 	state              protoimpl.MessageState     `protogen:"open.v1"`
 	TaskId             string                     `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
@@ -304,7 +305,7 @@ type Task struct {
 	TaskType           string                     `protobuf:"bytes,3,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
 	RequiredAttributes map[string]*AttributeValue `protobuf:"bytes,4,rep,name=required_attributes,json=requiredAttributes,proto3" json:"required_attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	EnqueuedAt         *timestamppb.Timestamp     `protobuf:"bytes,5,opt,name=enqueued_at,json=enqueuedAt,proto3" json:"enqueued_at,omitempty"`
-	// One of: "Pending", "Reserved", "Active", "Completed" (spec Section 5.1).
+	// One of: "Pending", "Reserved", "Active", "WrapUp", "Completed".
 	Status string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
 	// The active Offered/Accepted reservation for this task, if any. Empty
 	// string means null/none.
@@ -313,6 +314,22 @@ type Task struct {
 	// rejected; retained (not cleared) once the task completes. Empty
 	// string means null/none.
 	AssignedAgentId string `protobuf:"bytes,8,opt,name=assigned_agent_id,json=assignedAgentId,proto3" json:"assigned_agent_id,omitempty"`
+	// Optional. Seconds the agent is allowed to spend in WrapUp after
+	// EndTask before the agent's status is automatically reset to
+	// "Available" (the task itself is unaffected by the timer -- it stays
+	// WrapUp until CompleteTask). 0 means no wrap-up timer is configured for
+	// this task -- EndTask still moves it to WrapUp, but no automatic
+	// Available reset ever fires; only an explicit CompleteTask resolves it.
+	// Set at EnqueueTask time; immutable afterward.
+	WrapUpTimeoutSeconds int32 `protobuf:"varint,9,opt,name=wrap_up_timeout_seconds,json=wrapUpTimeoutSeconds,proto3" json:"wrap_up_timeout_seconds,omitempty"`
+	// Optional. Set via SetTaskDisposition, only while the task is in
+	// WrapUp. Empty string means null/none.
+	DispositionId string `protobuf:"bytes,10,opt,name=disposition_id,json=dispositionId,proto3" json:"disposition_id,omitempty"`
+	// Denormalized copy of the Disposition's name at the time it was set, so
+	// historical consumers (and this Task's own read paths) don't need a
+	// second lookup against the Disposition registry. Empty string means
+	// null/none.
+	DispositionName string `protobuf:"bytes,11,opt,name=disposition_name,json=dispositionName,proto3" json:"disposition_name,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -399,6 +416,27 @@ func (x *Task) GetCurrentReservationId() string {
 func (x *Task) GetAssignedAgentId() string {
 	if x != nil {
 		return x.AssignedAgentId
+	}
+	return ""
+}
+
+func (x *Task) GetWrapUpTimeoutSeconds() int32 {
+	if x != nil {
+		return x.WrapUpTimeoutSeconds
+	}
+	return 0
+}
+
+func (x *Task) GetDispositionId() string {
+	if x != nil {
+		return x.DispositionId
+	}
+	return ""
+}
+
+func (x *Task) GetDispositionName() string {
+	if x != nil {
+		return x.DispositionName
 	}
 	return ""
 }
@@ -1157,9 +1195,12 @@ type EnqueueTaskRequest struct {
 	// Optional caller-supplied enqueue timestamp (used internally when a
 	// task is returned to Pending, and available to callers for the same
 	// "preserve FIFO position" reason); server clock used if unset.
-	EnqueuedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=enqueued_at,json=enqueuedAt,proto3" json:"enqueued_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	EnqueuedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=enqueued_at,json=enqueuedAt,proto3" json:"enqueued_at,omitempty"`
+	// Optional. See Task.wrap_up_timeout_seconds. 0 (the default) means no
+	// wrap-up timer.
+	WrapUpTimeoutSeconds int32 `protobuf:"varint,6,opt,name=wrap_up_timeout_seconds,json=wrapUpTimeoutSeconds,proto3" json:"wrap_up_timeout_seconds,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *EnqueueTaskRequest) Reset() {
@@ -1225,6 +1266,13 @@ func (x *EnqueueTaskRequest) GetEnqueuedAt() *timestamppb.Timestamp {
 		return x.EnqueuedAt
 	}
 	return nil
+}
+
+func (x *EnqueueTaskRequest) GetWrapUpTimeoutSeconds() int32 {
+	if x != nil {
+		return x.WrapUpTimeoutSeconds
+	}
+	return 0
 }
 
 type ListTasksRequest struct {
@@ -1411,6 +1459,102 @@ func (x *CompleteTaskRequest) GetTaskId() string {
 	return ""
 }
 
+type EndTaskRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndTaskRequest) Reset() {
+	*x = EndTaskRequest{}
+	mi := &file_task_router_v1_task_router_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndTaskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndTaskRequest) ProtoMessage() {}
+
+func (x *EndTaskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndTaskRequest.ProtoReflect.Descriptor instead.
+func (*EndTaskRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *EndTaskRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+type SetTaskDispositionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	DispositionId string                 `protobuf:"bytes,2,opt,name=disposition_id,json=dispositionId,proto3" json:"disposition_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetTaskDispositionRequest) Reset() {
+	*x = SetTaskDispositionRequest{}
+	mi := &file_task_router_v1_task_router_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetTaskDispositionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetTaskDispositionRequest) ProtoMessage() {}
+
+func (x *SetTaskDispositionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_task_router_v1_task_router_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetTaskDispositionRequest.ProtoReflect.Descriptor instead.
+func (*SetTaskDispositionRequest) Descriptor() ([]byte, []int) {
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *SetTaskDispositionRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *SetTaskDispositionRequest) GetDispositionId() string {
+	if x != nil {
+		return x.DispositionId
+	}
+	return ""
+}
+
 type AcceptReservationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ReservationId string                 `protobuf:"bytes,1,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
@@ -1420,7 +1564,7 @@ type AcceptReservationRequest struct {
 
 func (x *AcceptReservationRequest) Reset() {
 	*x = AcceptReservationRequest{}
-	mi := &file_task_router_v1_task_router_proto_msgTypes[23]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1432,7 +1576,7 @@ func (x *AcceptReservationRequest) String() string {
 func (*AcceptReservationRequest) ProtoMessage() {}
 
 func (x *AcceptReservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_router_v1_task_router_proto_msgTypes[23]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1445,7 +1589,7 @@ func (x *AcceptReservationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptReservationRequest.ProtoReflect.Descriptor instead.
 func (*AcceptReservationRequest) Descriptor() ([]byte, []int) {
-	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{23}
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AcceptReservationRequest) GetReservationId() string {
@@ -1464,7 +1608,7 @@ type RejectReservationRequest struct {
 
 func (x *RejectReservationRequest) Reset() {
 	*x = RejectReservationRequest{}
-	mi := &file_task_router_v1_task_router_proto_msgTypes[24]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1476,7 +1620,7 @@ func (x *RejectReservationRequest) String() string {
 func (*RejectReservationRequest) ProtoMessage() {}
 
 func (x *RejectReservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_router_v1_task_router_proto_msgTypes[24]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1489,7 +1633,7 @@ func (x *RejectReservationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RejectReservationRequest.ProtoReflect.Descriptor instead.
 func (*RejectReservationRequest) Descriptor() ([]byte, []int) {
-	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{24}
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *RejectReservationRequest) GetReservationId() string {
@@ -1507,7 +1651,7 @@ type GetDashboardRequest struct {
 
 func (x *GetDashboardRequest) Reset() {
 	*x = GetDashboardRequest{}
-	mi := &file_task_router_v1_task_router_proto_msgTypes[25]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1519,7 +1663,7 @@ func (x *GetDashboardRequest) String() string {
 func (*GetDashboardRequest) ProtoMessage() {}
 
 func (x *GetDashboardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_task_router_v1_task_router_proto_msgTypes[25]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1532,7 +1676,7 @@ func (x *GetDashboardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDashboardRequest.ProtoReflect.Descriptor instead.
 func (*GetDashboardRequest) Descriptor() ([]byte, []int) {
-	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{25}
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{27}
 }
 
 type GetDashboardResponse struct {
@@ -1545,7 +1689,7 @@ type GetDashboardResponse struct {
 
 func (x *GetDashboardResponse) Reset() {
 	*x = GetDashboardResponse{}
-	mi := &file_task_router_v1_task_router_proto_msgTypes[26]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1557,7 +1701,7 @@ func (x *GetDashboardResponse) String() string {
 func (*GetDashboardResponse) ProtoMessage() {}
 
 func (x *GetDashboardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_task_router_v1_task_router_proto_msgTypes[26]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1570,7 +1714,7 @@ func (x *GetDashboardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDashboardResponse.ProtoReflect.Descriptor instead.
 func (*GetDashboardResponse) Descriptor() ([]byte, []int) {
-	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{26}
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetDashboardResponse) GetAgents() []*DashboardAgent {
@@ -1600,7 +1744,7 @@ type DashboardAgent struct {
 
 func (x *DashboardAgent) Reset() {
 	*x = DashboardAgent{}
-	mi := &file_task_router_v1_task_router_proto_msgTypes[27]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1612,7 +1756,7 @@ func (x *DashboardAgent) String() string {
 func (*DashboardAgent) ProtoMessage() {}
 
 func (x *DashboardAgent) ProtoReflect() protoreflect.Message {
-	mi := &file_task_router_v1_task_router_proto_msgTypes[27]
+	mi := &file_task_router_v1_task_router_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1625,7 +1769,7 @@ func (x *DashboardAgent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DashboardAgent.ProtoReflect.Descriptor instead.
 func (*DashboardAgent) Descriptor() ([]byte, []int) {
-	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{27}
+	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *DashboardAgent) GetAgent() *Agent {
@@ -1672,7 +1816,7 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\x1a[\n" +
 	"\rCapacityEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x124\n" +
-	"\x05value\x18\x02 \x01(\v2\x1e.taskrouter.v1.ChannelCapacityR\x05value:\x028\x01\"\xd2\x03\n" +
+	"\x05value\x18\x02 \x01(\v2\x1e.taskrouter.v1.ChannelCapacityR\x05value:\x028\x01\"\xdb\x04\n" +
 	"\x04Task\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x19\n" +
 	"\bqueue_id\x18\x02 \x01(\tR\aqueueId\x12\x1b\n" +
@@ -1682,7 +1826,11 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"enqueuedAt\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x124\n" +
 	"\x16current_reservation_id\x18\a \x01(\tR\x14currentReservationId\x12*\n" +
-	"\x11assigned_agent_id\x18\b \x01(\tR\x0fassignedAgentId\x1ad\n" +
+	"\x11assigned_agent_id\x18\b \x01(\tR\x0fassignedAgentId\x125\n" +
+	"\x17wrap_up_timeout_seconds\x18\t \x01(\x05R\x14wrapUpTimeoutSeconds\x12%\n" +
+	"\x0edisposition_id\x18\n" +
+	" \x01(\tR\rdispositionId\x12)\n" +
+	"\x10disposition_name\x18\v \x01(\tR\x0fdispositionName\x1ad\n" +
 	"\x17RequiredAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\"\xf6\x01\n" +
@@ -1746,14 +1894,15 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\x1dListAgentPendingOffersRequest\x12\x19\n" +
 	"\bagent_id\x18\x01 \x01(\tR\aagentId\"`\n" +
 	"\x1eListAgentPendingOffersResponse\x12>\n" +
-	"\freservations\x18\x01 \x03(\v2\x1a.taskrouter.v1.ReservationR\freservations\"\xf4\x02\n" +
+	"\freservations\x18\x01 \x03(\v2\x1a.taskrouter.v1.ReservationR\freservations\"\xab\x03\n" +
 	"\x12EnqueueTaskRequest\x12\x19\n" +
 	"\bqueue_id\x18\x01 \x01(\tR\aqueueId\x12\x1b\n" +
 	"\ttask_type\x18\x02 \x01(\tR\btaskType\x12j\n" +
 	"\x13required_attributes\x18\x03 \x03(\v29.taskrouter.v1.EnqueueTaskRequest.RequiredAttributesEntryR\x12requiredAttributes\x12\x17\n" +
 	"\atask_id\x18\x04 \x01(\tR\x06taskId\x12;\n" +
 	"\venqueued_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"enqueuedAt\x1ad\n" +
+	"enqueuedAt\x125\n" +
+	"\x17wrap_up_timeout_seconds\x18\x06 \x01(\x05R\x14wrapUpTimeoutSeconds\x1ad\n" +
 	"\x17RequiredAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
 	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\"*\n" +
@@ -1764,7 +1913,12 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\x0eGetTaskRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\".\n" +
 	"\x13CompleteTaskRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\"A\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\")\n" +
+	"\x0eEndTaskRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"[\n" +
+	"\x19SetTaskDispositionRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12%\n" +
+	"\x0edisposition_id\x18\x02 \x01(\tR\rdispositionId\"A\n" +
 	"\x18AcceptReservationRequest\x12%\n" +
 	"\x0ereservation_id\x18\x01 \x01(\tR\rreservationId\"A\n" +
 	"\x18RejectReservationRequest\x12%\n" +
@@ -1775,7 +1929,7 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\x05tasks\x18\x02 \x03(\v2\x13.taskrouter.v1.TaskR\x05tasks\"l\n" +
 	"\x0eDashboardAgent\x12*\n" +
 	"\x05agent\x18\x01 \x01(\v2\x14.taskrouter.v1.AgentR\x05agent\x12.\n" +
-	"\x13assigned_task_count\x18\x02 \x01(\x05R\x11assignedTaskCount2\x86\x10\n" +
+	"\x13assigned_task_count\x18\x02 \x01(\x05R\x11assignedTaskCount2\xea\x11\n" +
 	"\x11TaskRouterService\x12]\n" +
 	"\vCreateAgent\x12!.taskrouter.v1.CreateAgentRequest\x1a\x14.taskrouter.v1.Agent\"\x15\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
 	"/v1/agents\x12e\n" +
@@ -1793,7 +1947,9 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\vEnqueueTask\x12!.taskrouter.v1.EnqueueTaskRequest\x1a\x13.taskrouter.v1.Task\"\x14\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/tasks\x12a\n" +
 	"\tListTasks\x12\x1f.taskrouter.v1.ListTasksRequest\x1a .taskrouter.v1.ListTasksResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/tasks\x12Z\n" +
 	"\aGetTask\x12\x1d.taskrouter.v1.GetTaskRequest\x1a\x13.taskrouter.v1.Task\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/tasks/{task_id}\x12p\n" +
-	"\fCompleteTask\x12\".taskrouter.v1.CompleteTaskRequest\x1a\x13.taskrouter.v1.Task\"'\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/tasks/{task_id}/complete\x12\x8d\x01\n" +
+	"\fCompleteTask\x12\".taskrouter.v1.CompleteTaskRequest\x1a\x13.taskrouter.v1.Task\"'\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/tasks/{task_id}/complete\x12a\n" +
+	"\aEndTask\x12\x1d.taskrouter.v1.EndTaskRequest\x1a\x13.taskrouter.v1.Task\"\"\x82\xd3\xe4\x93\x02\x1c:\x01*\"\x17/v1/tasks/{task_id}/end\x12\x7f\n" +
+	"\x12SetTaskDisposition\x12(.taskrouter.v1.SetTaskDispositionRequest\x1a\x13.taskrouter.v1.Task\"*\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/tasks/{task_id}/disposition\x12\x8d\x01\n" +
 	"\x11AcceptReservation\x12'.taskrouter.v1.AcceptReservationRequest\x1a\x1a.taskrouter.v1.Reservation\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/reservations/{reservation_id}/accept\x12\x8d\x01\n" +
 	"\x11RejectReservation\x12'.taskrouter.v1.RejectReservationRequest\x1a\x1a.taskrouter.v1.Reservation\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/reservations/{reservation_id}/reject\x12n\n" +
 	"\fGetDashboard\x12\".taskrouter.v1.GetDashboardRequest\x1a#.taskrouter.v1.GetDashboardResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/dashboardBRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
@@ -1810,7 +1966,7 @@ func file_task_router_v1_task_router_proto_rawDescGZIP() []byte {
 	return file_task_router_v1_task_router_proto_rawDescData
 }
 
-var file_task_router_v1_task_router_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_task_router_v1_task_router_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_task_router_v1_task_router_proto_goTypes = []any{
 	(*AttributeValue)(nil),                 // 0: taskrouter.v1.AttributeValue
 	(*ChannelCapacity)(nil),                // 1: taskrouter.v1.ChannelCapacity
@@ -1835,39 +1991,41 @@ var file_task_router_v1_task_router_proto_goTypes = []any{
 	(*ListTasksResponse)(nil),              // 20: taskrouter.v1.ListTasksResponse
 	(*GetTaskRequest)(nil),                 // 21: taskrouter.v1.GetTaskRequest
 	(*CompleteTaskRequest)(nil),            // 22: taskrouter.v1.CompleteTaskRequest
-	(*AcceptReservationRequest)(nil),       // 23: taskrouter.v1.AcceptReservationRequest
-	(*RejectReservationRequest)(nil),       // 24: taskrouter.v1.RejectReservationRequest
-	(*GetDashboardRequest)(nil),            // 25: taskrouter.v1.GetDashboardRequest
-	(*GetDashboardResponse)(nil),           // 26: taskrouter.v1.GetDashboardResponse
-	(*DashboardAgent)(nil),                 // 27: taskrouter.v1.DashboardAgent
-	nil,                                    // 28: taskrouter.v1.Agent.AttributesEntry
-	nil,                                    // 29: taskrouter.v1.Agent.CapacityEntry
-	nil,                                    // 30: taskrouter.v1.Task.RequiredAttributesEntry
-	nil,                                    // 31: taskrouter.v1.CreateAgentRequest.AttributesEntry
-	nil,                                    // 32: taskrouter.v1.CreateAgentRequest.CapacityEntry
-	nil,                                    // 33: taskrouter.v1.ReplaceAgentCapacityRequest.CapacityEntry
-	nil,                                    // 34: taskrouter.v1.ReplaceAgentAttributesRequest.AttributesEntry
-	nil,                                    // 35: taskrouter.v1.EnqueueTaskRequest.RequiredAttributesEntry
-	(*timestamppb.Timestamp)(nil),          // 36: google.protobuf.Timestamp
+	(*EndTaskRequest)(nil),                 // 23: taskrouter.v1.EndTaskRequest
+	(*SetTaskDispositionRequest)(nil),      // 24: taskrouter.v1.SetTaskDispositionRequest
+	(*AcceptReservationRequest)(nil),       // 25: taskrouter.v1.AcceptReservationRequest
+	(*RejectReservationRequest)(nil),       // 26: taskrouter.v1.RejectReservationRequest
+	(*GetDashboardRequest)(nil),            // 27: taskrouter.v1.GetDashboardRequest
+	(*GetDashboardResponse)(nil),           // 28: taskrouter.v1.GetDashboardResponse
+	(*DashboardAgent)(nil),                 // 29: taskrouter.v1.DashboardAgent
+	nil,                                    // 30: taskrouter.v1.Agent.AttributesEntry
+	nil,                                    // 31: taskrouter.v1.Agent.CapacityEntry
+	nil,                                    // 32: taskrouter.v1.Task.RequiredAttributesEntry
+	nil,                                    // 33: taskrouter.v1.CreateAgentRequest.AttributesEntry
+	nil,                                    // 34: taskrouter.v1.CreateAgentRequest.CapacityEntry
+	nil,                                    // 35: taskrouter.v1.ReplaceAgentCapacityRequest.CapacityEntry
+	nil,                                    // 36: taskrouter.v1.ReplaceAgentAttributesRequest.AttributesEntry
+	nil,                                    // 37: taskrouter.v1.EnqueueTaskRequest.RequiredAttributesEntry
+	(*timestamppb.Timestamp)(nil),          // 38: google.protobuf.Timestamp
 }
 var file_task_router_v1_task_router_proto_depIdxs = []int32{
-	28, // 0: taskrouter.v1.Agent.attributes:type_name -> taskrouter.v1.Agent.AttributesEntry
-	29, // 1: taskrouter.v1.Agent.capacity:type_name -> taskrouter.v1.Agent.CapacityEntry
-	36, // 2: taskrouter.v1.Agent.status_changed_at:type_name -> google.protobuf.Timestamp
-	30, // 3: taskrouter.v1.Task.required_attributes:type_name -> taskrouter.v1.Task.RequiredAttributesEntry
-	36, // 4: taskrouter.v1.Task.enqueued_at:type_name -> google.protobuf.Timestamp
-	36, // 5: taskrouter.v1.Reservation.created_at:type_name -> google.protobuf.Timestamp
-	36, // 6: taskrouter.v1.Reservation.expires_at:type_name -> google.protobuf.Timestamp
-	31, // 7: taskrouter.v1.CreateAgentRequest.attributes:type_name -> taskrouter.v1.CreateAgentRequest.AttributesEntry
-	32, // 8: taskrouter.v1.CreateAgentRequest.capacity:type_name -> taskrouter.v1.CreateAgentRequest.CapacityEntry
+	30, // 0: taskrouter.v1.Agent.attributes:type_name -> taskrouter.v1.Agent.AttributesEntry
+	31, // 1: taskrouter.v1.Agent.capacity:type_name -> taskrouter.v1.Agent.CapacityEntry
+	38, // 2: taskrouter.v1.Agent.status_changed_at:type_name -> google.protobuf.Timestamp
+	32, // 3: taskrouter.v1.Task.required_attributes:type_name -> taskrouter.v1.Task.RequiredAttributesEntry
+	38, // 4: taskrouter.v1.Task.enqueued_at:type_name -> google.protobuf.Timestamp
+	38, // 5: taskrouter.v1.Reservation.created_at:type_name -> google.protobuf.Timestamp
+	38, // 6: taskrouter.v1.Reservation.expires_at:type_name -> google.protobuf.Timestamp
+	33, // 7: taskrouter.v1.CreateAgentRequest.attributes:type_name -> taskrouter.v1.CreateAgentRequest.AttributesEntry
+	34, // 8: taskrouter.v1.CreateAgentRequest.capacity:type_name -> taskrouter.v1.CreateAgentRequest.CapacityEntry
 	2,  // 9: taskrouter.v1.ListAgentsResponse.agents:type_name -> taskrouter.v1.Agent
-	33, // 10: taskrouter.v1.ReplaceAgentCapacityRequest.capacity:type_name -> taskrouter.v1.ReplaceAgentCapacityRequest.CapacityEntry
-	34, // 11: taskrouter.v1.ReplaceAgentAttributesRequest.attributes:type_name -> taskrouter.v1.ReplaceAgentAttributesRequest.AttributesEntry
+	35, // 10: taskrouter.v1.ReplaceAgentCapacityRequest.capacity:type_name -> taskrouter.v1.ReplaceAgentCapacityRequest.CapacityEntry
+	36, // 11: taskrouter.v1.ReplaceAgentAttributesRequest.attributes:type_name -> taskrouter.v1.ReplaceAgentAttributesRequest.AttributesEntry
 	4,  // 12: taskrouter.v1.ListAgentPendingOffersResponse.reservations:type_name -> taskrouter.v1.Reservation
-	35, // 13: taskrouter.v1.EnqueueTaskRequest.required_attributes:type_name -> taskrouter.v1.EnqueueTaskRequest.RequiredAttributesEntry
-	36, // 14: taskrouter.v1.EnqueueTaskRequest.enqueued_at:type_name -> google.protobuf.Timestamp
+	37, // 13: taskrouter.v1.EnqueueTaskRequest.required_attributes:type_name -> taskrouter.v1.EnqueueTaskRequest.RequiredAttributesEntry
+	38, // 14: taskrouter.v1.EnqueueTaskRequest.enqueued_at:type_name -> google.protobuf.Timestamp
 	3,  // 15: taskrouter.v1.ListTasksResponse.tasks:type_name -> taskrouter.v1.Task
-	27, // 16: taskrouter.v1.GetDashboardResponse.agents:type_name -> taskrouter.v1.DashboardAgent
+	29, // 16: taskrouter.v1.GetDashboardResponse.agents:type_name -> taskrouter.v1.DashboardAgent
 	3,  // 17: taskrouter.v1.GetDashboardResponse.tasks:type_name -> taskrouter.v1.Task
 	2,  // 18: taskrouter.v1.DashboardAgent.agent:type_name -> taskrouter.v1.Agent
 	0,  // 19: taskrouter.v1.Agent.AttributesEntry.value:type_name -> taskrouter.v1.AttributeValue
@@ -1892,28 +2050,32 @@ var file_task_router_v1_task_router_proto_depIdxs = []int32{
 	19, // 38: taskrouter.v1.TaskRouterService.ListTasks:input_type -> taskrouter.v1.ListTasksRequest
 	21, // 39: taskrouter.v1.TaskRouterService.GetTask:input_type -> taskrouter.v1.GetTaskRequest
 	22, // 40: taskrouter.v1.TaskRouterService.CompleteTask:input_type -> taskrouter.v1.CompleteTaskRequest
-	23, // 41: taskrouter.v1.TaskRouterService.AcceptReservation:input_type -> taskrouter.v1.AcceptReservationRequest
-	24, // 42: taskrouter.v1.TaskRouterService.RejectReservation:input_type -> taskrouter.v1.RejectReservationRequest
-	25, // 43: taskrouter.v1.TaskRouterService.GetDashboard:input_type -> taskrouter.v1.GetDashboardRequest
-	2,  // 44: taskrouter.v1.TaskRouterService.CreateAgent:output_type -> taskrouter.v1.Agent
-	7,  // 45: taskrouter.v1.TaskRouterService.ListAgents:output_type -> taskrouter.v1.ListAgentsResponse
-	2,  // 46: taskrouter.v1.TaskRouterService.GetAgent:output_type -> taskrouter.v1.Agent
-	10, // 47: taskrouter.v1.TaskRouterService.DeleteAgent:output_type -> taskrouter.v1.DeleteAgentResponse
-	2,  // 48: taskrouter.v1.TaskRouterService.SetAgentStatus:output_type -> taskrouter.v1.Agent
-	2,  // 49: taskrouter.v1.TaskRouterService.ReplaceAgentCapacity:output_type -> taskrouter.v1.Agent
-	2,  // 50: taskrouter.v1.TaskRouterService.ToggleChannelReady:output_type -> taskrouter.v1.Agent
-	2,  // 51: taskrouter.v1.TaskRouterService.ReplaceAgentQueues:output_type -> taskrouter.v1.Agent
-	2,  // 52: taskrouter.v1.TaskRouterService.ReplaceAgentAttributes:output_type -> taskrouter.v1.Agent
-	17, // 53: taskrouter.v1.TaskRouterService.ListAgentPendingOffers:output_type -> taskrouter.v1.ListAgentPendingOffersResponse
-	3,  // 54: taskrouter.v1.TaskRouterService.EnqueueTask:output_type -> taskrouter.v1.Task
-	20, // 55: taskrouter.v1.TaskRouterService.ListTasks:output_type -> taskrouter.v1.ListTasksResponse
-	3,  // 56: taskrouter.v1.TaskRouterService.GetTask:output_type -> taskrouter.v1.Task
-	3,  // 57: taskrouter.v1.TaskRouterService.CompleteTask:output_type -> taskrouter.v1.Task
-	4,  // 58: taskrouter.v1.TaskRouterService.AcceptReservation:output_type -> taskrouter.v1.Reservation
-	4,  // 59: taskrouter.v1.TaskRouterService.RejectReservation:output_type -> taskrouter.v1.Reservation
-	26, // 60: taskrouter.v1.TaskRouterService.GetDashboard:output_type -> taskrouter.v1.GetDashboardResponse
-	44, // [44:61] is the sub-list for method output_type
-	27, // [27:44] is the sub-list for method input_type
+	23, // 41: taskrouter.v1.TaskRouterService.EndTask:input_type -> taskrouter.v1.EndTaskRequest
+	24, // 42: taskrouter.v1.TaskRouterService.SetTaskDisposition:input_type -> taskrouter.v1.SetTaskDispositionRequest
+	25, // 43: taskrouter.v1.TaskRouterService.AcceptReservation:input_type -> taskrouter.v1.AcceptReservationRequest
+	26, // 44: taskrouter.v1.TaskRouterService.RejectReservation:input_type -> taskrouter.v1.RejectReservationRequest
+	27, // 45: taskrouter.v1.TaskRouterService.GetDashboard:input_type -> taskrouter.v1.GetDashboardRequest
+	2,  // 46: taskrouter.v1.TaskRouterService.CreateAgent:output_type -> taskrouter.v1.Agent
+	7,  // 47: taskrouter.v1.TaskRouterService.ListAgents:output_type -> taskrouter.v1.ListAgentsResponse
+	2,  // 48: taskrouter.v1.TaskRouterService.GetAgent:output_type -> taskrouter.v1.Agent
+	10, // 49: taskrouter.v1.TaskRouterService.DeleteAgent:output_type -> taskrouter.v1.DeleteAgentResponse
+	2,  // 50: taskrouter.v1.TaskRouterService.SetAgentStatus:output_type -> taskrouter.v1.Agent
+	2,  // 51: taskrouter.v1.TaskRouterService.ReplaceAgentCapacity:output_type -> taskrouter.v1.Agent
+	2,  // 52: taskrouter.v1.TaskRouterService.ToggleChannelReady:output_type -> taskrouter.v1.Agent
+	2,  // 53: taskrouter.v1.TaskRouterService.ReplaceAgentQueues:output_type -> taskrouter.v1.Agent
+	2,  // 54: taskrouter.v1.TaskRouterService.ReplaceAgentAttributes:output_type -> taskrouter.v1.Agent
+	17, // 55: taskrouter.v1.TaskRouterService.ListAgentPendingOffers:output_type -> taskrouter.v1.ListAgentPendingOffersResponse
+	3,  // 56: taskrouter.v1.TaskRouterService.EnqueueTask:output_type -> taskrouter.v1.Task
+	20, // 57: taskrouter.v1.TaskRouterService.ListTasks:output_type -> taskrouter.v1.ListTasksResponse
+	3,  // 58: taskrouter.v1.TaskRouterService.GetTask:output_type -> taskrouter.v1.Task
+	3,  // 59: taskrouter.v1.TaskRouterService.CompleteTask:output_type -> taskrouter.v1.Task
+	3,  // 60: taskrouter.v1.TaskRouterService.EndTask:output_type -> taskrouter.v1.Task
+	3,  // 61: taskrouter.v1.TaskRouterService.SetTaskDisposition:output_type -> taskrouter.v1.Task
+	4,  // 62: taskrouter.v1.TaskRouterService.AcceptReservation:output_type -> taskrouter.v1.Reservation
+	4,  // 63: taskrouter.v1.TaskRouterService.RejectReservation:output_type -> taskrouter.v1.Reservation
+	28, // 64: taskrouter.v1.TaskRouterService.GetDashboard:output_type -> taskrouter.v1.GetDashboardResponse
+	46, // [46:65] is the sub-list for method output_type
+	27, // [27:46] is the sub-list for method input_type
 	27, // [27:27] is the sub-list for extension type_name
 	27, // [27:27] is the sub-list for extension extendee
 	0,  // [0:27] is the sub-list for field type_name
@@ -1934,7 +2096,7 @@ func file_task_router_v1_task_router_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_task_router_v1_task_router_proto_rawDesc), len(file_task_router_v1_task_router_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

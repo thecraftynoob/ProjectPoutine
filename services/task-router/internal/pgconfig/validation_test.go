@@ -13,7 +13,7 @@ import (
 // from "numeric").
 func TestValidateAgainstRegistry(t *testing.T) {
 	registry := map[string]AttributeType{
-		"is_vip":     AttributeBoolean,
+		"is_vip":      AttributeBoolean,
 		"skill_level": AttributeNumeric,
 	}
 

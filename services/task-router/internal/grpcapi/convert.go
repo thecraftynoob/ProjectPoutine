@@ -112,6 +112,9 @@ func taskToProto(t redisdomain.Task) *taskrouterv1.Task {
 		Status:               string(t.Status),
 		CurrentReservationId: t.CurrentReservationID,
 		AssignedAgentId:      t.AssignedAgentID,
+		WrapUpTimeoutSeconds: t.WrapUpTimeoutSeconds,
+		DispositionId:        t.DispositionID,
+		DispositionName:      t.DispositionName,
 	}
 }
 
@@ -170,5 +173,13 @@ func attributeDefToProto(a pgconfig.AttributeDefinition) *taskrouterv1.Attribute
 		Name:      a.Name,
 		Type:      attributeTypeToProto(a.Type),
 		CreatedAt: timestamppb.New(a.CreatedAt),
+	}
+}
+
+func dispositionToProto(d pgconfig.Disposition) *taskrouterv1.Disposition {
+	return &taskrouterv1.Disposition{
+		DispositionId: d.DispositionID,
+		Name:          d.Name,
+		CreatedAt:     timestamppb.New(d.CreatedAt),
 	}
 }

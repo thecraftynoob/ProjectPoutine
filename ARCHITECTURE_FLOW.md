@@ -79,10 +79,12 @@ a `runtime.ServeMux` API Gateway builds into its HTTP server
 | POST | `/v1/agents/{agent_id}/queues` | `TaskRouterService.ReplaceAgentQueues` | required |
 | POST | `/v1/agents/{agent_id}/attributes` | `TaskRouterService.ReplaceAgentAttributes` | required |
 | GET | `/v1/agents/{agent_id}/offers` | `TaskRouterService.ListAgentPendingOffers` | required |
-| POST | `/v1/tasks` | `TaskRouterService.EnqueueTask` | required |
-| GET | `/v1/tasks` | `TaskRouterService.ListTasks` | required — optional `?status=` query param (`Pending`\|`Reserved`\|`Active`\|`Completed`) filters to one status; an unrecognized value is rejected with `InvalidArgument` rather than silently returning an empty list (2026-09-14) |
+| POST | `/v1/tasks` | `TaskRouterService.EnqueueTask` | required — optional `wrap_up_timeout_seconds` body field (Wrap Up / Disposition lifecycle, 2026-09-14); 0 (default) means no wrap-up timer |
+| GET | `/v1/tasks` | `TaskRouterService.ListTasks` | required — optional `?status=` query param (`Pending`\|`Reserved`\|`Active`\|`WrapUp`\|`Completed`) filters to one status; an unrecognized value is rejected with `InvalidArgument` rather than silently returning an empty list (2026-09-14) |
 | GET | `/v1/tasks/{task_id}` | `TaskRouterService.GetTask` | required |
-| POST | `/v1/tasks/{task_id}/complete` | `TaskRouterService.CompleteTask` | required |
+| POST | `/v1/tasks/{task_id}/complete` | `TaskRouterService.CompleteTask` | required — now valid from `Active` OR `WrapUp` (2026-09-14); resets the assigned agent's status to `Available` |
+| POST | `/v1/tasks/{task_id}/end` | `TaskRouterService.EndTask` | required — new (2026-09-14). Wrap Up / Disposition lifecycle step 1: stops the communication channel, moves the task `Active`→`WrapUp` and the assigned agent's status to `WrapUp`; starts the wrap-up timer if `wrap_up_timeout_seconds` > 0 |
+| POST | `/v1/tasks/{task_id}/disposition` | `TaskRouterService.SetTaskDisposition` | required — new (2026-09-14). Tags a `WrapUp` task with a registered Disposition; rejected unless the task is currently `WrapUp` |
 | POST | `/v1/reservations/{reservation_id}/accept` | `TaskRouterService.AcceptReservation` | required |
 | POST | `/v1/reservations/{reservation_id}/reject` | `TaskRouterService.RejectReservation` | required |
 | GET | `/v1/dashboard` | `TaskRouterService.GetDashboard` | required |
@@ -97,6 +99,11 @@ a `runtime.ServeMux` API Gateway builds into its HTTP server
 | GET | `/v1/admin/attributes` | `TaskRouterAdminService.ListAttributes` | required |
 | GET | `/v1/admin/attributes/{name}` | `TaskRouterAdminService.GetAttribute` | required |
 | DELETE | `/v1/admin/attributes/{name}` | `TaskRouterAdminService.RemoveAttribute` | required |
+| POST | `/v1/admin/dispositions` | `TaskRouterAdminService.RegisterDisposition` | required — new (2026-09-14) |
+| GET | `/v1/admin/dispositions` | `TaskRouterAdminService.ListDispositions` | required — new (2026-09-14) |
+| DELETE | `/v1/admin/dispositions/{disposition_id}` | `TaskRouterAdminService.RemoveDisposition` | required — new (2026-09-14) |
+| POST | `/v1/admin/queues/{queue_id}/dispositions` | `TaskRouterAdminService.AssociateQueueDispositions` | required — new (2026-09-14). Full replace, all-or-nothing |
+| GET | `/v1/admin/queues/{queue_id}/dispositions` | `TaskRouterAdminService.ListQueueDispositions` | required — new (2026-09-14) |
 | POST | `/v1/ws-ticket` | *(gateway-local — see §4 below, not a backend RPC)* | required (normal session bearer token) |
 | GET | `/ws?ticket=<jwt>` | *(gateway-local proxy to Agent Presence — see §4.1 below)* | exempt from `gwauth.Middleware` — authenticates itself via `?ticket=`, verified by `internal/wsproxy` before ever dialing upstream |
 
@@ -125,17 +132,44 @@ exactly (Login, CreateTenant, CreateUser) plus GetTenant/ListTenants
 |---|---|---|
 | `task` | `task.enqueued` | A new task is created |
 | `task` | `task.accepted` | A reservation for the task is accepted |
-| `task` | `task.completed` | The task-completion capability is invoked |
+| `task` | `task.completed` | The task-completion capability is invoked. Payload now includes `dispositionId`/`dispositionName` (nullable) — Wrap Up / Disposition lifecycle, 2026-09-14 |
+| `task` | `task.ended` | **New (2026-09-14).** `EndTask` invoked — step 1 of the Wrap Up / Disposition lifecycle |
+| `task` | `task.disposition.set` | **New (2026-09-14).** `SetTaskDisposition` invoked |
 | `agent` | `agent.created` | A new agent is provisioned |
 | `agent` | `agent.status.changed` | Master status updated |
 | `agent` | `agent.capacity.config.updated` | Capacity map replaced or one channel's ready flag toggled |
 | `agent` | `agent.queues.updated` | Queue memberships replaced |
 | `agent` | `agent.deleted` | Agent removed |
+| `agent` | `agent.wrapup.timed_out` | **New (2026-09-14).** A task's wrap-up timer reached 0 while the task was still `WrapUp`, resetting the agent's status to `Available` |
 | `reservation` | `reservation.created` | Matching algorithm commits a match |
 | `reservation` | `reservation.accepted` | Accept capability invoked |
 | `reservation` | `reservation.rejected` | Manual reject, automatic expiry, or agent-deletion-triggered rejection |
 
 Full catalog and exact trigger semantics: `TASK_ROUTER_SPECIFICATION.md` §6.
+
+**Wrap Up / Disposition two-step completion lifecycle (2026-09-14):** a new
+`Task` status, `WrapUp`, sits between `Active` and `Completed`. `EndTask`
+(step 1 — stopping the communication channel) moves `Active`→`WrapUp` and
+sets the assigned agent's status to the new system-assigned value
+`WrapUp`; an optional per-task `wrap_up_timeout_seconds` (set at
+`EnqueueTask` time) drives a Redis TTL + keyspace-notification timer
+(`services/task-router/internal/redisdomain/expiry.go`'s
+`SubscribeWrapUpTimeout`, mirroring reservation-expiry's mechanism
+exactly) — if it reaches 0 while the task is still `WrapUp`, the agent's
+status is reset to `Available`, but the task itself stays `WrapUp` (no
+auto-complete). `SetTaskDisposition` (step 2's data element) tags a
+`WrapUp` task with a tenant-registered Disposition (new Postgres registry,
+`task_router_dispositions` + `task_router_queue_dispositions` join table,
+same RLS-protected pattern as Queue/Status/Attribute) any time before the
+timer fires. `CompleteTask` (step 2 — formal completion) is now valid from
+either `Active` (skipping WrapUp entirely, the original unmodified path)
+or `WrapUp`, and — new — always resets the assigned agent's status to
+`Available`. The disposition, if set, rides along in the `task.completed`
+event payload, so Historical Reporting's existing generic JSONB ingestion
+(`services/historical-reporting/internal/eventconsumer`) captures it on
+the historical record with **no historical-reporting-side schema
+change** — see that service's package doc comment for why its
+`historical_events` table is deliberately schema-agnostic per event type.
 
 ### Subscribed by Agent & Presence Service (`services/agent-presence/internal/relay/`)
 
@@ -488,7 +522,7 @@ now with each table's runtime-role grant noted:
 
 | Service | Owns (via its own migrations) |
 |---|---|
-| **Task Router** | `task_router_queues`, `task_router_statuses`, `task_router_attributes` (`services/task-router/internal/pgconfig/migrations/`), plus its own `task_router_schema_migrations` tracking table. All RLS-protected (`tenant_isolation` policy, `FORCE ROW LEVEL SECURITY`). `ccaas_app` (the runtime role) granted `SELECT, INSERT, UPDATE, DELETE` on all four by `internal/pgconfig/runtime_role.go`, run from `Migrate()`. |
+| **Task Router** | `task_router_queues`, `task_router_statuses`, `task_router_attributes`, `task_router_dispositions`, `task_router_queue_dispositions` (the last two added 2026-09-14 for the Wrap Up / Disposition lifecycle's Disposition registry) (`services/task-router/internal/pgconfig/migrations/`), plus its own `task_router_schema_migrations` tracking table. All RLS-protected (`tenant_isolation` policy, `FORCE ROW LEVEL SECURITY`). `ccaas_app` (the runtime role) granted `SELECT, INSERT, UPDATE, DELETE` on all six by `internal/pgconfig/runtime_role.go`, run from `Migrate()`. |
 | **Tenant & Identity Management** | `tenants`, `tenant_identity_users`, the signing-keypair table (`services/tenant-identity/internal/pgstore/migrations/`), plus its own `tenant_identity_schema_migrations` tracking table. Only `tenant_identity_users` is RLS-protected — `tenants`/the signing-keypair table have no `tenant_id` column to scope by. `ccaas_app` granted `SELECT, INSERT, UPDATE, DELETE` on all four by `internal/pgstore/runtime_role.go`, run from `Migrate()` (same grant regardless of RLS, for connection-identity consistency — see §5.0). |
 | **Background Worker Pool** | `background_jobs` and `background_worker_pool_wrapup_targets` (`services/background-worker-pool/internal/pgstore/migrations/`) — see below for the migration-ownership decision and the new table. Tracking table `background_worker_pool_schema_migrations` (own migration runner, `pg_advisory_xact_lock`-guarded like Historical Reporting's, same unique-per-service-name pattern). No RLS on either table — same system-level-table reasoning as `historical_events` below. `ccaas_app` granted `SELECT, INSERT, UPDATE, DELETE` on all three tables by `internal/pgstore/runtime_role.go`, plus `USAGE, SELECT` on `background_jobs_id_seq` (its `BIGSERIAL` primary key's implicit sequence — INSERT relying on the column default needs sequence privilege independently of the table grant). |
 | **Historical Reporting** | `historical_events` (`services/historical-reporting/internal/pgstore/migrations/`) — the single generic ingestion table for the full NATS event catalog (see §2's "Subscribed by Historical Reporting" above). Tracking table `historical_reporting_schema_migrations` (own migration runner, same unique-per-service-name pattern as every other service's). No RLS on `historical_events` — like `background_jobs` above, it's a system-level ingestion table with no in-service tenant-scoped query path yet, not a per-tenant CRUD resource; see `internal/pgstore`'s package doc comment. `ccaas_app` granted `SELECT, INSERT, UPDATE, DELETE` on both tables by `internal/pgstore/runtime_role.go`. |

@@ -81,6 +81,20 @@ func reservationExpiryKey(tenantID, reservationID string) string {
 	return fmt.Sprintf("%s:%s:resexp:%s", keyPrefix, tenantID, reservationID)
 }
 
+// wrapUpExpiryKey returns the TTL-bearing sentinel key whose expiry,
+// combined with Redis keyspace notifications, drives the wrap-up timer
+// (mirrors reservationExpiryKey's mechanism exactly, per the Wrap Up /
+// Disposition two-step completion lifecycle). The key's value is
+// irrelevant; only its existence and TTL matter. Deleted (not just left to
+// expire) when the task leaves WrapUp any other way (CompleteTask), so a
+// stale expiry notification can never fire for a task no longer in
+// WrapUp -- the sweep handler's own re-check of the task's live status is
+// still the real safety net, but proactive deletion keeps the keyspace
+// clean and avoids a needless wakeup.
+func wrapUpExpiryKey(tenantID, taskID string) string {
+	return fmt.Sprintf("%s:%s:wrapupexp:%s", keyPrefix, tenantID, taskID)
+}
+
 // seqKey returns the hash key holding this tenant's monotonically
 // increasing ID counters (one field per entity kind: "task",
 // "reservation"), used for server-generated sequential IDs.
@@ -119,6 +133,30 @@ func ReservationIDFromExpiryKey(key string) (tenantID, reservationID string, ok 
 		return "", "", false
 	}
 	return tenantID, reservationID, true
+}
+
+// TaskIDFromWrapUpExpiryKey extracts (tenantID, taskID) from an expired
+// key name previously produced by wrapUpExpiryKey, or ok=false if the key
+// doesn't match the expected "tr:{tenant}:wrapupexp:{id}" shape (e.g. an
+// unrelated key, such as a reservation-expiry key, expiring in the same
+// Redis instance).
+func TaskIDFromWrapUpExpiryKey(key string) (tenantID, taskID string, ok bool) {
+	const prefix = keyPrefix + ":"
+	const mid = ":wrapupexp:"
+	if len(key) <= len(prefix) || key[:len(prefix)] != prefix {
+		return "", "", false
+	}
+	rest := key[len(prefix):]
+	idx := indexOf(rest, mid)
+	if idx < 0 {
+		return "", "", false
+	}
+	tenantID = rest[:idx]
+	taskID = rest[idx+len(mid):]
+	if tenantID == "" || taskID == "" {
+		return "", "", false
+	}
+	return tenantID, taskID, true
 }
 
 func indexOf(s, substr string) int {

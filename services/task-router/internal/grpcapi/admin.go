@@ -238,3 +238,87 @@ func (s *TaskRouterAdminServer) RemoveAttribute(ctx context.Context, req *taskro
 	}
 	return &taskrouterv1.RemoveAttributeResponse{}, nil
 }
+
+// --- Disposition Registry (Wrap Up / Disposition two-step completion lifecycle) ---
+
+func (s *TaskRouterAdminServer) RegisterDisposition(ctx context.Context, req *taskrouterv1.RegisterDispositionRequest) (*taskrouterv1.Disposition, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "name is required")
+	}
+	d, err := s.Registry.RegisterDisposition(ctx, tid, req.GetDispositionId(), req.GetName())
+	if err == pgconfig.ErrAlreadyExists {
+		return nil, status.Errorf(codes.AlreadyExists, "disposition %q already exists", req.GetDispositionId())
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "register disposition: %v", err)
+	}
+	return dispositionToProto(d), nil
+}
+
+func (s *TaskRouterAdminServer) ListDispositions(ctx context.Context, _ *taskrouterv1.ListDispositionsRequest) (*taskrouterv1.ListDispositionsResponse, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dispositions, err := s.Registry.ListDispositions(ctx, tid)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list dispositions: %v", err)
+	}
+	out := make([]*taskrouterv1.Disposition, len(dispositions))
+	for i, d := range dispositions {
+		out[i] = dispositionToProto(d)
+	}
+	return &taskrouterv1.ListDispositionsResponse{Dispositions: out}, nil
+}
+
+func (s *TaskRouterAdminServer) RemoveDisposition(ctx context.Context, req *taskrouterv1.RemoveDispositionRequest) (*taskrouterv1.RemoveDispositionResponse, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Registry.RemoveDisposition(ctx, tid, req.GetDispositionId()); err != nil {
+		return nil, status.Errorf(codes.Internal, "remove disposition: %v", err)
+	}
+	return &taskrouterv1.RemoveDispositionResponse{}, nil
+}
+
+func (s *TaskRouterAdminServer) AssociateQueueDispositions(ctx context.Context, req *taskrouterv1.AssociateQueueDispositionsRequest) (*taskrouterv1.AssociateQueueDispositionsResponse, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetQueueId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "queue_id is required")
+	}
+	missing, err := s.Registry.DispositionsExist(ctx, tid, req.GetDispositionIds())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "check dispositions exist: %v", err)
+	}
+	if len(missing) > 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "disposition(s) do not exist: %v", missing)
+	}
+	if err := s.Registry.AssociateQueueDispositions(ctx, tid, req.GetQueueId(), req.GetDispositionIds()); err != nil {
+		return nil, status.Errorf(codes.Internal, "associate queue dispositions: %v", err)
+	}
+	return &taskrouterv1.AssociateQueueDispositionsResponse{}, nil
+}
+
+func (s *TaskRouterAdminServer) ListQueueDispositions(ctx context.Context, req *taskrouterv1.ListQueueDispositionsRequest) (*taskrouterv1.ListQueueDispositionsResponse, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	dispositions, err := s.Registry.ListQueueDispositions(ctx, tid, req.GetQueueId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list queue dispositions: %v", err)
+	}
+	out := make([]*taskrouterv1.Disposition, len(dispositions))
+	for i, d := range dispositions {
+		out[i] = dispositionToProto(d)
+	}
+	return &taskrouterv1.ListQueueDispositionsResponse{Dispositions: out}, nil
+}

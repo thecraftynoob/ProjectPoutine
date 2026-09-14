@@ -33,6 +33,8 @@ const (
 	TaskRouterService_ListTasks_FullMethodName              = "/taskrouter.v1.TaskRouterService/ListTasks"
 	TaskRouterService_GetTask_FullMethodName                = "/taskrouter.v1.TaskRouterService/GetTask"
 	TaskRouterService_CompleteTask_FullMethodName           = "/taskrouter.v1.TaskRouterService/CompleteTask"
+	TaskRouterService_EndTask_FullMethodName                = "/taskrouter.v1.TaskRouterService/EndTask"
+	TaskRouterService_SetTaskDisposition_FullMethodName     = "/taskrouter.v1.TaskRouterService/SetTaskDisposition"
 	TaskRouterService_AcceptReservation_FullMethodName      = "/taskrouter.v1.TaskRouterService/AcceptReservation"
 	TaskRouterService_RejectReservation_FullMethodName      = "/taskrouter.v1.TaskRouterService/RejectReservation"
 	TaskRouterService_GetDashboard_FullMethodName           = "/taskrouter.v1.TaskRouterService/GetDashboard"
@@ -108,10 +110,29 @@ type TaskRouterServiceClient interface {
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	// GetTask retrieves one task's current state.
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
-	// CompleteTask signals that an Active task's work is finished, freeing
-	// the assigned agent's capacity. Rejected unless the task is currently
-	// Active.
+	// CompleteTask formally completes an interaction: valid from Active
+	// (skipping Wrap Up entirely, e.g. a task with no wrap_up_timeout_seconds
+	// configured) or from WrapUp (the agent clicked Complete Task during
+	// wrap-up, optionally after setting a disposition). Rejected unless the
+	// task is currently Active or WrapUp. Sets the assigned agent's status to
+	// "Available" and releases capacity.
 	CompleteTask(ctx context.Context, in *CompleteTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	// EndTask stops the communication channel for an Active task (e.g. a
+	// call/chat hangup) without yet formally completing the interaction --
+	// step 1 of the two-step completion lifecycle. Moves the task to WrapUp
+	// and the assigned agent's status to "WrapUp". If the task's
+	// wrap_up_timeout_seconds is > 0, a timer starts; when it reaches 0 with
+	// the task still in WrapUp, the agent's status is automatically reset to
+	// "Available" (the task itself stays WrapUp -- see CompleteTask/
+	// SetTaskDisposition for what still needs to happen to reach Completed).
+	// Rejected unless the task is currently Active.
+	EndTask(ctx context.Context, in *EndTaskRequest, opts ...grpc.CallOption) (*Task, error)
+	// SetTaskDisposition tags a task with a disposition for historical
+	// reporting -- step 2's data element, settable by the agent any time
+	// during WrapUp up until the wrap-up timer reaches 0. Rejected unless the
+	// task is currently WrapUp, and unless disposition_id is a registered
+	// Disposition (spec: new Disposition concept).
+	SetTaskDisposition(ctx context.Context, in *SetTaskDispositionRequest, opts ...grpc.CallOption) (*Task, error)
 	// AcceptReservation lets an agent agree to take the offered task.
 	// Rejected unless the reservation is currently Offered.
 	AcceptReservation(ctx context.Context, in *AcceptReservationRequest, opts ...grpc.CallOption) (*Reservation, error)
@@ -275,6 +296,26 @@ func (c *taskRouterServiceClient) CompleteTask(ctx context.Context, in *Complete
 	return out, nil
 }
 
+func (c *taskRouterServiceClient) EndTask(ctx context.Context, in *EndTaskRequest, opts ...grpc.CallOption) (*Task, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Task)
+	err := c.cc.Invoke(ctx, TaskRouterService_EndTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskRouterServiceClient) SetTaskDisposition(ctx context.Context, in *SetTaskDispositionRequest, opts ...grpc.CallOption) (*Task, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Task)
+	err := c.cc.Invoke(ctx, TaskRouterService_SetTaskDisposition_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *taskRouterServiceClient) AcceptReservation(ctx context.Context, in *AcceptReservationRequest, opts ...grpc.CallOption) (*Reservation, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Reservation)
@@ -375,10 +416,29 @@ type TaskRouterServiceServer interface {
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	// GetTask retrieves one task's current state.
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)
-	// CompleteTask signals that an Active task's work is finished, freeing
-	// the assigned agent's capacity. Rejected unless the task is currently
-	// Active.
+	// CompleteTask formally completes an interaction: valid from Active
+	// (skipping Wrap Up entirely, e.g. a task with no wrap_up_timeout_seconds
+	// configured) or from WrapUp (the agent clicked Complete Task during
+	// wrap-up, optionally after setting a disposition). Rejected unless the
+	// task is currently Active or WrapUp. Sets the assigned agent's status to
+	// "Available" and releases capacity.
 	CompleteTask(context.Context, *CompleteTaskRequest) (*Task, error)
+	// EndTask stops the communication channel for an Active task (e.g. a
+	// call/chat hangup) without yet formally completing the interaction --
+	// step 1 of the two-step completion lifecycle. Moves the task to WrapUp
+	// and the assigned agent's status to "WrapUp". If the task's
+	// wrap_up_timeout_seconds is > 0, a timer starts; when it reaches 0 with
+	// the task still in WrapUp, the agent's status is automatically reset to
+	// "Available" (the task itself stays WrapUp -- see CompleteTask/
+	// SetTaskDisposition for what still needs to happen to reach Completed).
+	// Rejected unless the task is currently Active.
+	EndTask(context.Context, *EndTaskRequest) (*Task, error)
+	// SetTaskDisposition tags a task with a disposition for historical
+	// reporting -- step 2's data element, settable by the agent any time
+	// during WrapUp up until the wrap-up timer reaches 0. Rejected unless the
+	// task is currently WrapUp, and unless disposition_id is a registered
+	// Disposition (spec: new Disposition concept).
+	SetTaskDisposition(context.Context, *SetTaskDispositionRequest) (*Task, error)
 	// AcceptReservation lets an agent agree to take the offered task.
 	// Rejected unless the reservation is currently Offered.
 	AcceptReservation(context.Context, *AcceptReservationRequest) (*Reservation, error)
@@ -443,6 +503,12 @@ func (UnimplementedTaskRouterServiceServer) GetTask(context.Context, *GetTaskReq
 }
 func (UnimplementedTaskRouterServiceServer) CompleteTask(context.Context, *CompleteTaskRequest) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method CompleteTask not implemented")
+}
+func (UnimplementedTaskRouterServiceServer) EndTask(context.Context, *EndTaskRequest) (*Task, error) {
+	return nil, status.Error(codes.Unimplemented, "method EndTask not implemented")
+}
+func (UnimplementedTaskRouterServiceServer) SetTaskDisposition(context.Context, *SetTaskDispositionRequest) (*Task, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetTaskDisposition not implemented")
 }
 func (UnimplementedTaskRouterServiceServer) AcceptReservation(context.Context, *AcceptReservationRequest) (*Reservation, error) {
 	return nil, status.Error(codes.Unimplemented, "method AcceptReservation not implemented")
@@ -726,6 +792,42 @@ func _TaskRouterService_CompleteTask_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskRouterService_EndTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EndTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterServiceServer).EndTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterService_EndTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterServiceServer).EndTask(ctx, req.(*EndTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskRouterService_SetTaskDisposition_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetTaskDispositionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskRouterServiceServer).SetTaskDisposition(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskRouterService_SetTaskDisposition_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskRouterServiceServer).SetTaskDisposition(ctx, req.(*SetTaskDispositionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TaskRouterService_AcceptReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AcceptReservationRequest)
 	if err := dec(in); err != nil {
@@ -842,6 +944,14 @@ var TaskRouterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompleteTask",
 			Handler:    _TaskRouterService_CompleteTask_Handler,
+		},
+		{
+			MethodName: "EndTask",
+			Handler:    _TaskRouterService_EndTask_Handler,
+		},
+		{
+			MethodName: "SetTaskDisposition",
+			Handler:    _TaskRouterService_SetTaskDisposition_Handler,
 		},
 		{
 			MethodName: "AcceptReservation",

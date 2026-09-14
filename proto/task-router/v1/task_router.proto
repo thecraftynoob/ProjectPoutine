@@ -149,12 +149,43 @@ service TaskRouterService {
     };
   }
 
-  // CompleteTask signals that an Active task's work is finished, freeing
-  // the assigned agent's capacity. Rejected unless the task is currently
-  // Active.
+  // CompleteTask formally completes an interaction: valid from Active
+  // (skipping Wrap Up entirely, e.g. a task with no wrap_up_timeout_seconds
+  // configured) or from WrapUp (the agent clicked Complete Task during
+  // wrap-up, optionally after setting a disposition). Rejected unless the
+  // task is currently Active or WrapUp. Sets the assigned agent's status to
+  // "Available" and releases capacity.
   rpc CompleteTask(CompleteTaskRequest) returns (Task) {
     option (google.api.http) = {
       post: "/v1/tasks/{task_id}/complete"
+      body: "*"
+    };
+  }
+
+  // EndTask stops the communication channel for an Active task (e.g. a
+  // call/chat hangup) without yet formally completing the interaction --
+  // step 1 of the two-step completion lifecycle. Moves the task to WrapUp
+  // and the assigned agent's status to "WrapUp". If the task's
+  // wrap_up_timeout_seconds is > 0, a timer starts; when it reaches 0 with
+  // the task still in WrapUp, the agent's status is automatically reset to
+  // "Available" (the task itself stays WrapUp -- see CompleteTask/
+  // SetTaskDisposition for what still needs to happen to reach Completed).
+  // Rejected unless the task is currently Active.
+  rpc EndTask(EndTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/v1/tasks/{task_id}/end"
+      body: "*"
+    };
+  }
+
+  // SetTaskDisposition tags a task with a disposition for historical
+  // reporting -- step 2's data element, settable by the agent any time
+  // during WrapUp up until the wrap-up timer reaches 0. Rejected unless the
+  // task is currently WrapUp, and unless disposition_id is a registered
+  // Disposition (spec: new Disposition concept).
+  rpc SetTaskDisposition(SetTaskDispositionRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/v1/tasks/{task_id}/disposition"
       body: "*"
     };
   }
@@ -249,14 +280,15 @@ message Agent {
   string user_id = 7;
 }
 
-// Task mirrors spec Section 2.2 exactly.
+// Task mirrors spec Section 2.2, extended with the Wrap Up / Disposition
+// two-step completion lifecycle.
 message Task {
   string task_id = 1;
   string queue_id = 2;
   string task_type = 3;
   map<string, AttributeValue> required_attributes = 4;
   google.protobuf.Timestamp enqueued_at = 5;
-  // One of: "Pending", "Reserved", "Active", "Completed" (spec Section 5.1).
+  // One of: "Pending", "Reserved", "Active", "WrapUp", "Completed".
   string status = 6;
   // The active Offered/Accepted reservation for this task, if any. Empty
   // string means null/none.
@@ -265,6 +297,22 @@ message Task {
   // rejected; retained (not cleared) once the task completes. Empty
   // string means null/none.
   string assigned_agent_id = 8;
+  // Optional. Seconds the agent is allowed to spend in WrapUp after
+  // EndTask before the agent's status is automatically reset to
+  // "Available" (the task itself is unaffected by the timer -- it stays
+  // WrapUp until CompleteTask). 0 means no wrap-up timer is configured for
+  // this task -- EndTask still moves it to WrapUp, but no automatic
+  // Available reset ever fires; only an explicit CompleteTask resolves it.
+  // Set at EnqueueTask time; immutable afterward.
+  int32 wrap_up_timeout_seconds = 9;
+  // Optional. Set via SetTaskDisposition, only while the task is in
+  // WrapUp. Empty string means null/none.
+  string disposition_id = 10;
+  // Denormalized copy of the Disposition's name at the time it was set, so
+  // historical consumers (and this Task's own read paths) don't need a
+  // second lookup against the Disposition registry. Empty string means
+  // null/none.
+  string disposition_name = 11;
 }
 
 // Reservation mirrors spec Section 2.3 exactly.
@@ -359,6 +407,9 @@ message EnqueueTaskRequest {
   // task is returned to Pending, and available to callers for the same
   // "preserve FIFO position" reason); server clock used if unset.
   google.protobuf.Timestamp enqueued_at = 5;
+  // Optional. See Task.wrap_up_timeout_seconds. 0 (the default) means no
+  // wrap-up timer.
+  int32 wrap_up_timeout_seconds = 6;
 }
 
 message ListTasksRequest {
@@ -383,6 +434,15 @@ message GetTaskRequest {
 
 message CompleteTaskRequest {
   string task_id = 1;
+}
+
+message EndTaskRequest {
+  string task_id = 1;
+}
+
+message SetTaskDispositionRequest {
+  string task_id = 1;
+  string disposition_id = 2;
 }
 
 // --- Reservation RPC messages ---

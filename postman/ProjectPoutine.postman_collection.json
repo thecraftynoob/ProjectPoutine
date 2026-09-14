@@ -57,6 +57,11 @@
       "type": "string"
     },
     {
+      "key": "disposition_id",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "ws_ticket",
       "value": "",
       "type": "string"
@@ -459,9 +464,116 @@
               ]
             }
           }
+        },
+        {
+          "name": "Register Disposition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.dispositionId) { pm.collectionVariables.set('disposition_id', body.dispositionId); }",
+                  "pm.test('201/200 and dispositionId present', () => { pm.expect([200,201]).to.include(pm.response.code); pm.expect(body.dispositionId).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/dispositions",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "dispositions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ticket Created\"\n}"
+            },
+            "description": "Required auth. TaskRouterAdminService.RegisterDisposition. dispositionId is optional -- server-generates one if omitted (captured into {{disposition_id}} by this request's test script). Wrap Up / Disposition lifecycle -- see folder 4's 'Set Task Disposition'."
+          }
+        },
+        {
+          "name": "List Dispositions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/dispositions",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "dispositions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Associate Queue Dispositions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/queues/{{queue_id}}/dispositions",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "queues",
+                "{{queue_id}}",
+                "dispositions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dispositionIds\": [\"{{disposition_id}}\"]\n}"
+            },
+            "description": "Required auth. TaskRouterAdminService.AssociateQueueDispositions. Full replace, all-or-nothing -- rejected entirely if any dispositionId doesn't exist (run 'Register Disposition' first)."
+          }
+        },
+        {
+          "name": "List Queue Dispositions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/queues/{{queue_id}}/dispositions",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "queues",
+                "{{queue_id}}",
+                "dispositions"
+              ]
+            }
+          }
         }
       ],
-      "description": "Register Queue/Status/Attribute create the resources \"3. Task Router - Agents\" and \"4. Task Router - Tasks & Reservations\" depend on (a queue named {{queue_id}}, an \"Available\" status, a \"vip\" attribute). This folder deliberately does NOT include Remove* requests -- those moved to folder \"7. Cleanup (standalone, run last)\" so a full sequential 1-through-5 run never deletes a resource an earlier step still needs."
+      "description": "Register Queue/Status/Attribute/Disposition create the resources \"3. Task Router - Agents\" and \"4. Task Router - Tasks & Reservations\" depend on (a queue named {{queue_id}}, an \"Available\" status, a \"vip\" attribute, a \"Ticket Created\" disposition associated to {{queue_id}}). This folder deliberately does NOT include Remove* requests -- those moved to folder \"7. Cleanup (standalone, run last)\" so a full sequential 1-through-5 run never deletes a resource an earlier step still needs."
     },
     {
       "name": "3. Task Router - Agents",
@@ -745,9 +857,9 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"queueId\": \"{{queue_id}}\",\n  \"taskType\": \"chat\"\n}"
+              "raw": "{\n  \"queueId\": \"{{queue_id}}\",\n  \"taskType\": \"chat\",\n  \"wrapUpTimeoutSeconds\": 60\n}"
             },
-            "description": "Required auth. TaskRouterService.EnqueueTask. Prefer 'Digital Channels Gateway > Inbound Chat Webhook' to create a task the same way a real channel would -- this request is here for direct Task Router testing without a channel in the loop."
+            "description": "Required auth. TaskRouterService.EnqueueTask. Prefer 'Digital Channels Gateway > Inbound Chat Webhook' to create a task the same way a real channel would -- this request is here for direct Task Router testing without a channel in the loop. wrapUpTimeoutSeconds is optional (Wrap Up / Disposition lifecycle) -- 0 or omitted means no wrap-up timer, so 'Complete Task' can be called directly from Active without ever calling 'End Task' first; set here to exercise the End Task -> Set Task Disposition -> Complete Task flow below instead."
           }
         },
         {
@@ -768,11 +880,11 @@
                   "key": "status",
                   "value": "",
                   "disabled": true,
-                  "description": "Optional. One of Pending, Reserved, Active, Completed (TaskRouterService.ListTasks.status). Filters to tasks in that status only. An unrecognized value is rejected with 400 InvalidArgument rather than silently returning an empty list. Enable this param and set a value to use it -- disabled by default so the request returns every task, matching this collection folder's default sequential-flow behavior."
+                  "description": "Optional. One of Pending, Reserved, Active, WrapUp, Completed (TaskRouterService.ListTasks.status). Filters to tasks in that status only. An unrecognized value is rejected with 400 InvalidArgument rather than silently returning an empty list. Enable this param and set a value to use it -- disabled by default so the request returns every task, matching this collection folder's default sequential-flow behavior."
                 }
               ]
             },
-            "description": "Required auth. TaskRouterService.ListTasks. Optional ?status= query param filters to one status (Pending/Reserved/Active/Completed) -- see the disabled status query param above for how to use it."
+            "description": "Required auth. TaskRouterService.ListTasks. Optional ?status= query param filters to one status (Pending/Reserved/Active/WrapUp/Completed) -- see the disabled status query param above for how to use it."
           }
         },
         {
@@ -845,6 +957,54 @@
           }
         },
         {
+          "name": "End Task",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tasks/{{task_id}}/end",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tasks",
+                "{{task_id}}",
+                "end"
+              ]
+            },
+            "description": "Required auth. TaskRouterService.EndTask. Wrap Up / Disposition lifecycle step 1: stops the communication channel -- moves the task Active -> WrapUp and {{agent_id}}'s status to WrapUp. Rejected unless the task is currently Active (accept the reservation first). If the task's wrapUpTimeoutSeconds > 0 (see Enqueue Task), a timer starts; if it reaches 0 before Complete Task is called, the agent's status is automatically reset to Available (the task itself stays WrapUp)."
+          }
+        },
+        {
+          "name": "Set Task Disposition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tasks/{{task_id}}/disposition",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tasks",
+                "{{task_id}}",
+                "disposition"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dispositionId\": \"{{disposition_id}}\"\n}"
+            },
+            "description": "Required auth. TaskRouterService.SetTaskDisposition. Wrap Up / Disposition lifecycle step 2's data element -- tags the task for historical reporting. Rejected unless the task is currently WrapUp (run 'End Task' first), and unless {{disposition_id}} is a registered Disposition (see folder 2's 'Register Disposition'). Free to call any time during WrapUp, up until the wrap-up timer reaches 0."
+          }
+        },
+        {
           "name": "Complete Task",
           "request": {
             "method": "POST",
@@ -860,7 +1020,7 @@
                 "complete"
               ]
             },
-            "description": "Required auth. TaskRouterService.CompleteTask. Publishes task.completed -- Historical Reporting durably ingests this; Background Worker Pool durably consumes it to trigger a wrap-up sync job (see GAPS.md for that pipeline's known simplifications)."
+            "description": "Required auth. TaskRouterService.CompleteTask. Formally completes the interaction -- valid from Active (skipping WrapUp entirely) or WrapUp (this folder's flow, optionally after Set Task Disposition). Resets {{agent_id}}'s status to Available and releases capacity. Publishes task.completed (payload includes dispositionId/dispositionName if one was set) -- Historical Reporting durably ingests this; Background Worker Pool durably consumes it to trigger a wrap-up sync job (see GAPS.md for that pipeline's known simplifications)."
           }
         },
         {
@@ -1021,6 +1181,25 @@
                 "vip"
               ]
             }
+          }
+        },
+        {
+          "name": "Remove Disposition",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/dispositions/{{disposition_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "dispositions",
+                "{{disposition_id}}"
+              ]
+            },
+            "description": "Required auth. TaskRouterAdminService.RemoveDisposition. Also drops this disposition from every queue association (see AssociateQueueDispositions)."
           }
         },
         {

@@ -3,6 +3,7 @@ package redisdomain
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -19,6 +20,10 @@ type EnqueueTaskInput struct {
 	// position (spec Section 2.2) -- used internally by the reject/expiry
 	// paths, and available to external callers for the same reason.
 	EnqueuedAt time.Time
+	// WrapUpTimeoutSeconds is optional (Wrap Up / Disposition lifecycle);
+	// 0 means no wrap-up timer is configured for this task. Immutable
+	// after enqueue.
+	WrapUpTimeoutSeconds int32
 }
 
 // EnqueueTask atomically creates a new Pending task and inserts it into
@@ -51,6 +56,7 @@ func (s *Store) EnqueueTask(ctx context.Context, tenantID string, in EnqueueTask
 		},
 		taskID, in.QueueID, in.TaskType, attrsJSON,
 		formatTime(enqueuedAt), int64(enqueuedAt.UnixMicro()),
+		int64(in.WrapUpTimeoutSeconds),
 	)
 	if err != nil {
 		return Task{}, err
@@ -60,12 +66,13 @@ func (s *Store) EnqueueTask(ctx context.Context, tenantID string, in EnqueueTask
 	}
 
 	return Task{
-		TaskID:             taskID,
-		QueueID:            in.QueueID,
-		TaskType:           in.TaskType,
-		RequiredAttributes: cloneAttrs(in.RequiredAttributes),
-		EnqueuedAt:         enqueuedAt,
-		Status:             TaskPending,
+		TaskID:               taskID,
+		QueueID:              in.QueueID,
+		TaskType:             in.TaskType,
+		RequiredAttributes:   cloneAttrs(in.RequiredAttributes),
+		EnqueuedAt:           enqueuedAt,
+		Status:               TaskPending,
+		WrapUpTimeoutSeconds: in.WrapUpTimeoutSeconds,
 	}, nil
 }
 
@@ -90,6 +97,14 @@ func decodeTask(taskID string, fields map[string]string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	var wrapUpTimeoutSeconds int32
+	if raw := fields["wrapUpTimeoutSeconds"]; raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil {
+			return Task{}, fmt.Errorf("redisdomain: decode task wrapUpTimeoutSeconds: %w", err)
+		}
+		wrapUpTimeoutSeconds = int32(n)
+	}
 	return Task{
 		TaskID:               taskID,
 		QueueID:              fields["queueId"],
@@ -99,6 +114,9 @@ func decodeTask(taskID string, fields map[string]string) (Task, error) {
 		Status:               TaskStatus(fields["status"]),
 		CurrentReservationID: fields["currentReservationId"],
 		AssignedAgentID:      fields["assignedAgentId"],
+		WrapUpTimeoutSeconds: wrapUpTimeoutSeconds,
+		DispositionID:        fields["dispositionId"],
+		DispositionName:      fields["dispositionName"],
 	}, nil
 }
 
@@ -153,14 +171,16 @@ type CompleteTaskResult struct {
 	AgentID string
 }
 
-// ErrTaskNotActive is returned by CompleteTask when the task exists but
-// is not currently Active.
-var ErrTaskNotActive = fmt.Errorf("redisdomain: task not active")
+// ErrTaskNotActive is returned by CompleteTask when the task exists but is
+// not currently in a completable status (Active or WrapUp -- see the Wrap
+// Up / Disposition two-step completion lifecycle).
+var ErrTaskNotActive = fmt.Errorf("redisdomain: task not active or wrap-up")
 
-// CompleteTask atomically completes an Active task and releases the
-// assigned agent's capacity (spec Sections 3.3, 4.2, 5.4 rule 2). Returns
-// ErrNotFound if the task doesn't exist, ErrTaskNotActive if it exists
-// but isn't Active.
+// CompleteTask atomically completes a task currently Active or WrapUp,
+// releases the assigned agent's capacity, and resets the agent's status to
+// "Available" (spec Sections 3.3, 4.2, 5.4 rule 2, extended by the Wrap Up
+// / Disposition lifecycle). Returns ErrNotFound if the task doesn't exist,
+// ErrTaskNotActive if it exists but isn't Active or WrapUp.
 func (s *Store) CompleteTask(ctx context.Context, tenantID, taskID string) (CompleteTaskResult, error) {
 	task, err := s.GetTask(ctx, tenantID, taskID)
 	if err != nil {
@@ -179,8 +199,8 @@ func (s *Store) CompleteTask(ctx context.Context, tenantID, taskID string) (Comp
 	}
 
 	res, err := runScript(ctx, s.client, "complete_task",
-		[]string{taskKey(tenantID, taskID), agentKeyStr, agentOffersKeyStr},
-		taskID,
+		[]string{taskKey(tenantID, taskID), agentKeyStr, agentOffersKeyStr, wrapUpExpiryKey(tenantID, taskID)},
+		taskID, formatTime(time.Now().UTC()),
 	)
 	if err != nil {
 		return CompleteTaskResult{}, err
@@ -197,6 +217,149 @@ func (s *Store) CompleteTask(ctx context.Context, tenantID, taskID string) (Comp
 		return CompleteTaskResult{}, ErrTaskNotActive
 	}
 	return CompleteTaskResult{AgentID: asString(slice[1])}, nil
+}
+
+// ErrTaskNotWrapUp is returned by SetTaskDisposition when the task exists
+// but is not currently WrapUp.
+var ErrTaskNotWrapUp = fmt.Errorf("redisdomain: task not in wrap-up")
+
+// EndTaskResult reports the outcome of EndTask.
+type EndTaskResult struct {
+	// AgentID is the agent moved to WrapUp status (may be empty if the
+	// task existed but had no live assigned agent record).
+	AgentID string
+}
+
+// EndTask atomically stops the communication channel for an Active task
+// (step 1 of the Wrap Up / Disposition two-step completion lifecycle):
+// moves the task to WrapUp and the assigned agent's status to "WrapUp".
+// Does NOT start the wrap-up timer itself -- see
+// (*Store).StartWrapUpTimer, called by the grpcapi layer immediately after
+// this succeeds, only when the task's WrapUpTimeoutSeconds > 0. Returns
+// ErrNotFound if the task doesn't exist, ErrTaskNotActive if it exists but
+// isn't currently Active.
+func (s *Store) EndTask(ctx context.Context, tenantID, taskID string) (EndTaskResult, error) {
+	task, err := s.GetTask(ctx, tenantID, taskID)
+	if err != nil {
+		return EndTaskResult{}, err
+	}
+	agentKeyStr := agentKey(tenantID, "__none__")
+	if task.AssignedAgentID != "" {
+		agentKeyStr = agentKey(tenantID, task.AssignedAgentID)
+	}
+
+	res, err := runScript(ctx, s.client, "end_task",
+		[]string{taskKey(tenantID, taskID), agentKeyStr},
+		taskID, formatTime(time.Now().UTC()),
+	)
+	if err != nil {
+		return EndTaskResult{}, err
+	}
+	slice, err := asSlice(res)
+	if err != nil {
+		return EndTaskResult{}, err
+	}
+	if asInt64(slice[0]) == 0 {
+		status := asString(slice[1])
+		if status == "" {
+			return EndTaskResult{}, ErrNotFound
+		}
+		return EndTaskResult{}, ErrTaskNotActive
+	}
+	return EndTaskResult{AgentID: asString(slice[1])}, nil
+}
+
+// StartWrapUpTimer sets the TTL-bearing sentinel key that drives the
+// wrap-up timer (mirrors MatchCommit's reservation-expiry sentinel
+// exactly). Called by the grpcapi layer right after a successful EndTask,
+// only when timeoutSeconds > 0 (0 means no wrap-up timer is configured;
+// see EnqueueTaskInput.WrapUpTimeoutSeconds's doc comment).
+func (s *Store) StartWrapUpTimer(ctx context.Context, tenantID, taskID string, timeoutSeconds int32) error {
+	if timeoutSeconds <= 0 {
+		return nil
+	}
+	if err := s.client.Set(ctx, wrapUpExpiryKey(tenantID, taskID), "1", time.Duration(timeoutSeconds)*time.Second).Err(); err != nil {
+		return fmt.Errorf("redisdomain: start wrap-up timer: %w", err)
+	}
+	return nil
+}
+
+// SetTaskDisposition atomically tags a WrapUp task with a disposition
+// (step 2's data element). dispositionID/dispositionName validity against
+// the tenant's Disposition registry must be checked by the caller before
+// invoking this (Postgres, pgconfig -- this Store has no knowledge of that
+// registry). Returns ErrNotFound if the task doesn't exist, ErrTaskNotWrapUp
+// if it exists but isn't currently WrapUp.
+func (s *Store) SetTaskDisposition(ctx context.Context, tenantID, taskID, dispositionID, dispositionName string) error {
+	res, err := runScript(ctx, s.client, "set_task_disposition",
+		[]string{taskKey(tenantID, taskID)},
+		taskID, dispositionID, dispositionName,
+	)
+	if err != nil {
+		return err
+	}
+	slice, err := asSlice(res)
+	if err != nil {
+		return err
+	}
+	if asInt64(slice[0]) == 0 {
+		status := asString(slice[1])
+		if status == "" {
+			return ErrNotFound
+		}
+		return ErrTaskNotWrapUp
+	}
+	return nil
+}
+
+// WrapUpTimeoutResult reports the outcome of ResolveWrapUpTimeout.
+type WrapUpTimeoutResult struct {
+	// Resolved is true if the agent's status was actually reset to
+	// Available by this call (false if the task had already left WrapUp
+	// by the time the sweep ran -- spec Section 5.4 rule 4's general
+	// idempotent-safe-resolution principle, applied to the wrap-up timer).
+	Resolved bool
+	AgentID  string
+}
+
+// ResolveWrapUpTimeout handles one fired wrap-up-timer sentinel key
+// notification (see SubscribeWrapUpTimeout): if taskID is still WrapUp,
+// resets the assigned agent's status to "Available" (spec: "If the
+// Agent's Wrap up timer reaches 0... the agent's status needs to be
+// updated to Available"). The task itself is left untouched.
+func (s *Store) ResolveWrapUpTimeout(ctx context.Context, tenantID, taskID string) (WrapUpTimeoutResult, error) {
+	task, err := s.GetTask(ctx, tenantID, taskID)
+	if err == ErrNotFound {
+		return WrapUpTimeoutResult{}, nil
+	}
+	if err != nil {
+		return WrapUpTimeoutResult{}, err
+	}
+	agentKeyStr := agentKey(tenantID, "__none__")
+	if task.AssignedAgentID != "" {
+		agentKeyStr = agentKey(tenantID, task.AssignedAgentID)
+	}
+
+	res, err := runScript(ctx, s.client, "wrap_up_timeout",
+		[]string{taskKey(tenantID, taskID), agentKeyStr},
+		formatTime(time.Now().UTC()),
+	)
+	if err != nil {
+		return WrapUpTimeoutResult{}, err
+	}
+	slice, err := asSlice(res)
+	if err != nil {
+		return WrapUpTimeoutResult{}, err
+	}
+	if asInt64(slice[0]) == 0 {
+		// Task no longer exists or already left WrapUp -- no-op.
+		return WrapUpTimeoutResult{}, nil
+	}
+	agentID := asString(slice[1])
+	if agentID == "" {
+		return WrapUpTimeoutResult{}, nil
+	}
+	return WrapUpTimeoutResult{Resolved: true, AgentID: agentID}, nil
 }
 
 // nextID generates a sequential, server-assigned ID for the given entity

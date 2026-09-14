@@ -30,9 +30,9 @@ import (
 	"syscall"
 	"time"
 
-	taskrouterv1 "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/config"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/eventbus"
+	taskrouterv1 "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/health"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/pgtenant"
@@ -49,10 +49,10 @@ import (
 )
 
 type serviceConfig struct {
-	GRPCPort    string `env:"TASK_ROUTER_GRPC_PORT" envDefault:"50054"`
-	RedisAddr   string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
-	RedisDB     int    `env:"TASK_ROUTER_REDIS_DB" envDefault:"0"`
-	NATSURL     string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
+	GRPCPort  string `env:"TASK_ROUTER_GRPC_PORT" envDefault:"50054"`
+	RedisAddr string `env:"REDIS_ADDR" envDefault:"localhost:6379"`
+	RedisDB   int    `env:"TASK_ROUTER_REDIS_DB" envDefault:"0"`
+	NATSURL   string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
 	// PostgresDSN authenticates as the Postgres SUPERUSER ("ccaas" by
 	// default -- see deploy/k8s/infra-config.yaml's POSTGRES_USER). Used
 	// ONLY for running pgconfig.Migrate at startup (CREATE ROLE/GRANT
@@ -245,6 +245,17 @@ func main() {
 		}
 	}()
 
+	// --- Wrap-up timer subscriber (Wrap Up / Disposition two-step
+	// completion lifecycle) ---
+	go func() {
+		err := redisdomain.SubscribeWrapUpTimeout(ctx, redisClient, cfg.RedisDB, logger, func(fired redisdomain.FiredWrapUpTimer) {
+			handleWrapUpTimeout(ctx, logger, store, publisher, fired)
+		})
+		if err != nil && ctx.Err() == nil {
+			logger.Error("wrap-up timer subscriber stopped unexpectedly", slog.Any("error", err))
+		}
+	}()
+
 	// --- Serve, with graceful shutdown on SIGINT/SIGTERM ---
 	serveErr := make(chan error, 1)
 	go func() {
@@ -332,5 +343,34 @@ func handleExpiredReservation(ctx context.Context, logger *slog.Logger, store *r
 		if err := publisher.ReservationCreated(ctx, tid, o.Reservation.ReservationID, o.Reservation.TaskID, o.Reservation.AgentID, expiresAt); err != nil {
 			logger.Error("publish reservation created (post-expiry match) failed", slog.Any("error", err))
 		}
+	}
+}
+
+// handleWrapUpTimeout resolves one fired wrap-up-timer sentinel key
+// notification (Wrap Up / Disposition two-step completion lifecycle): "If
+// the Agent's Wrap up timer reaches 0... the agent's status needs to be
+// updated to Available." The task itself is left in WrapUp -- only an
+// explicit CompleteTask moves it to Completed.
+func handleWrapUpTimeout(ctx context.Context, logger *slog.Logger, store *redisdomain.Store, publisher *events.Publisher, fired redisdomain.FiredWrapUpTimer) {
+	tid, err := uuid.Parse(fired.TenantID)
+	if err != nil {
+		logger.Error("invalid tenant id in wrap-up timer notification", slog.String("tenant_id", fired.TenantID), slog.Any("error", err))
+		return
+	}
+
+	result, err := store.ResolveWrapUpTimeout(ctx, fired.TenantID, fired.TaskID)
+	if err != nil {
+		logger.Error("failed to resolve wrap-up timeout", slog.String("task_id", fired.TaskID), slog.Any("error", err))
+		return
+	}
+	if !result.Resolved {
+		// Task already left WrapUp (completed) between the timer firing
+		// and this handler running -- exactly the race
+		// ResolveWrapUpTimeout's own re-check anticipates. No-op.
+		return
+	}
+
+	if err := publisher.AgentWrapUpTimedOut(ctx, tid, result.AgentID, fired.TaskID); err != nil {
+		logger.Error("publish agent wrap-up timed out failed", slog.Any("error", err))
 	}
 }

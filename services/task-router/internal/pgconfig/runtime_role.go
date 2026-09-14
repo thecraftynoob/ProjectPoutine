@@ -110,7 +110,9 @@ func ensureRuntimeRole(ctx context.Context, pool pgExecutor) error {
 // grantRuntimeRolePrivileges grants RuntimeRole exactly the privileges
 // Task Router's own queries need on Task Router's own tables -- SELECT,
 // INSERT, UPDATE, DELETE on task_router_queues, task_router_statuses,
-// task_router_attributes, and this package's own
+// task_router_attributes, task_router_dispositions,
+// task_router_queue_dispositions (the last two backing the Wrap Up /
+// Disposition lifecycle's Disposition registry), and this package's own
 // task_router_schema_migrations tracking table (the migration-check/
 // record logic in Migrate above queries and writes it every run, so it
 // needs the same grants as any other table this service's runtime pool
@@ -122,7 +124,7 @@ func ensureRuntimeRole(ctx context.Context, pool pgExecutor) error {
 // tenant_identity_users) -- see ARCHITECTURE_FLOW.md §5's table-ownership
 // map for the authoritative per-service table list.
 func grantRuntimeRolePrivileges(ctx context.Context, pool pgExecutor) error {
-	const tables = `task_router_queues, task_router_statuses, task_router_attributes, task_router_schema_migrations`
+	const tables = `task_router_queues, task_router_statuses, task_router_attributes, task_router_dispositions, task_router_queue_dispositions, task_router_schema_migrations`
 	if _, err := pool.Exec(ctx, fmt.Sprintf(
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON %s TO %s`,
 		tables, runtimeRoleQuoteIdent(RuntimeRole),

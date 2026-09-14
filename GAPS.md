@@ -119,6 +119,54 @@ buried in a doc comment nobody re-reads.
   consumer invents, the same root cause surfacing in a second durable
   consumer.
 
+- **Wrap-up timer resets the agent unconditionally to `Available`, never
+  back to whatever status it held before the task started (2026-09-14).**
+  Both `CompleteTask` and the wrap-up-timer sweep
+  (`services/task-router/internal/redisdomain/scripts/complete_task.lua`,
+  `wrap_up_timeout.lua`) hardcode the agent's post-completion status to
+  `"Available"`, per the literal spec wording ("the agent's status needs
+  to be updated to Available"). There is no concept of "the status the
+  agent was in before this task started" preserved anywhere in the domain
+  model, so an agent that was, say, on a scheduled break interrupted to
+  take this task is put back to `Available`, not `Break`. **Real version
+  needs:** either an explicit "resume previous status" field captured at
+  match time, or a supervisor/agent-configurable post-wrap-up default,
+  if this distinction ever matters operationally.
+- **`WrapUp` is a system-assigned Agent status seeded into every tenant's
+  Status registry (`pgconfig.DefaultStatuses`), but nothing prevents an
+  operator from also setting it manually via `SetAgentStatus`, or removing
+  it from the registry via `RemoveStatus` (2026-09-14).** Mirrors
+  `"Not Responding"`'s existing, identical gap (that value has the same
+  dual nature) rather than introducing a new one — see this file's pattern
+  for why: the Status registry has never had a concept of "system-only,
+  not directly settable" values. **Real version needs:** a registry-level
+  flag distinguishing system-assigned statuses from operator-settable
+  ones, applied consistently to both `Not Responding` and `WrapUp`.
+- **Disposition IDs are either caller-supplied or a random 8-byte hex
+  string (`pgconfig.randomDispositionID`) — no human-friendly slug
+  generation from the disposition's name (2026-09-14).** Every other
+  registry in this service (Queue, Status, Attribute) uses a
+  caller-required, human-meaningful ID; Disposition is the first one
+  where the ID is optional because a UI selecting from a dropdown by
+  `name` has no natural use for the ID being meaningful. **Real version
+  needs:** nothing functionally, but a name-derived slug (e.g.
+  `"ticket-created"`) would read better in logs/DB rows than
+  `"disp-a1b2c3d4e5f6a7b8"` if that ever matters.
+- **Removing a Queue or a Disposition does not clean up
+  `task_router_queue_dispositions` rows that reference it via the OTHER
+  side of the association (2026-09-14).** `RemoveDisposition` does clean
+  up its own association rows (it's the row's own primary owner on that
+  axis), but `RemoveQueue` does not touch
+  `task_router_queue_dispositions` at all — mirroring `RemoveQueue`'s
+  pre-existing, spec-documented behavior of leaving Agent/Task references
+  to a removed queue orphaned rather than blocking or cascading (spec
+  Section 3.1). **Real version needs:** nothing broken today (an orphaned
+  join row for a deleted queue is simply never returned by
+  `ListQueueDispositions`, since that query is scoped by `queue_id` from
+  the caller, not by scanning the join table), but a periodic cleanup job
+  would keep the join table from accumulating dead rows indefinitely in a
+  long-lived tenant.
+
 ## Infrastructure stand-ins
 
 - **No real per-tenant settings/config system exists anywhere.** Every

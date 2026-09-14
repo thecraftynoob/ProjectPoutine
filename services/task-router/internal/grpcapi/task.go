@@ -4,6 +4,7 @@ import (
 	"context"
 
 	taskrouterv1 "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1"
+	"github.com/thecraftynoob/ProjectPoutine/services/task-router/internal/pgconfig"
 	"github.com/thecraftynoob/ProjectPoutine/services/task-router/internal/redisdomain"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,10 +39,11 @@ func (s *TaskRouterServer) EnqueueTask(ctx context.Context, req *taskrouterv1.En
 	}
 
 	in := redisdomain.EnqueueTaskInput{
-		TaskID:             req.GetTaskId(),
-		QueueID:            req.GetQueueId(),
-		TaskType:           req.GetTaskType(),
-		RequiredAttributes: attrs,
+		TaskID:               req.GetTaskId(),
+		QueueID:              req.GetQueueId(),
+		TaskType:             req.GetTaskType(),
+		RequiredAttributes:   attrs,
+		WrapUpTimeoutSeconds: req.GetWrapUpTimeoutSeconds(),
 	}
 	if req.GetEnqueuedAt() != nil {
 		in.EnqueuedAt = req.GetEnqueuedAt().AsTime()
@@ -107,9 +109,12 @@ func (s *TaskRouterServer) GetTask(ctx context.Context, req *taskrouterv1.GetTas
 	return taskToProto(task), nil
 }
 
-// CompleteTask implements spec Section 3.3's "Complete a Task". Rejected
-// unless the task is currently Active. Releases capacity (spec Section
-// 4.2).
+// CompleteTask formally completes an interaction (Wrap Up / Disposition
+// two-step completion lifecycle's step 2): valid from Active (skipping
+// WrapUp entirely) or WrapUp (optionally after SetTaskDisposition).
+// Rejected unless the task is currently Active or WrapUp. Releases
+// capacity and resets the assigned agent's status to "Available" (spec
+// Section 4.2, extended by the lifecycle).
 func (s *TaskRouterServer) CompleteTask(ctx context.Context, req *taskrouterv1.CompleteTaskRequest) (*taskrouterv1.Task, error) {
 	tid, err := tenantID(ctx)
 	if err != nil {
@@ -121,18 +126,102 @@ func (s *TaskRouterServer) CompleteTask(ctx context.Context, req *taskrouterv1.C
 		return nil, status.Errorf(codes.NotFound, "task %q not found", req.GetTaskId())
 	}
 	if err == redisdomain.ErrTaskNotActive {
-		return nil, status.Errorf(codes.FailedPrecondition, "task %q is not Active", req.GetTaskId())
+		return nil, status.Errorf(codes.FailedPrecondition, "task %q is not Active or WrapUp", req.GetTaskId())
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "complete task: %v", err)
 	}
 
-	if err := s.Events.TaskCompleted(ctx, tid, req.GetTaskId(), result.AgentID); err != nil {
+	task, err := s.Store.GetTask(ctx, tid.String(), req.GetTaskId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get task: %v", err)
+	}
+
+	if err := s.Events.TaskCompleted(ctx, tid, req.GetTaskId(), result.AgentID, task.DispositionID, task.DispositionName); err != nil {
 		s.logger().Error("publish task completed failed", "error", err)
 	}
 
 	// Freed capacity could satisfy a waiting task.
 	s.runMatchingPass(ctx, tid)
+
+	return taskToProto(task), nil
+}
+
+// EndTask stops the communication channel for an Active task (Wrap Up /
+// Disposition two-step completion lifecycle's step 1): moves the task to
+// WrapUp and the assigned agent's status to "WrapUp", and starts the
+// wrap-up timer if the task's wrap_up_timeout_seconds > 0. Rejected unless
+// the task is currently Active.
+func (s *TaskRouterServer) EndTask(ctx context.Context, req *taskrouterv1.EndTaskRequest) (*taskrouterv1.Task, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := s.Store.EndTask(ctx, tid.String(), req.GetTaskId())
+	if err == redisdomain.ErrNotFound {
+		return nil, status.Errorf(codes.NotFound, "task %q not found", req.GetTaskId())
+	}
+	if err == redisdomain.ErrTaskNotActive {
+		return nil, status.Errorf(codes.FailedPrecondition, "task %q is not Active", req.GetTaskId())
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "end task: %v", err)
+	}
+
+	task, err := s.Store.GetTask(ctx, tid.String(), req.GetTaskId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get task: %v", err)
+	}
+
+	if task.WrapUpTimeoutSeconds > 0 {
+		if err := s.Store.StartWrapUpTimer(ctx, tid.String(), req.GetTaskId(), task.WrapUpTimeoutSeconds); err != nil {
+			s.logger().Error("start wrap-up timer failed", "error", err)
+		}
+	}
+
+	if err := s.Events.TaskEnded(ctx, tid, req.GetTaskId(), result.AgentID); err != nil {
+		s.logger().Error("publish task ended failed", "error", err)
+	}
+
+	return taskToProto(task), nil
+}
+
+// SetTaskDisposition tags a WrapUp task with a disposition (step 2's data
+// element, settable any time during WrapUp up until the wrap-up timer
+// reaches 0). Rejected unless the task is currently WrapUp, and unless
+// disposition_id is a registered Disposition.
+func (s *TaskRouterServer) SetTaskDisposition(ctx context.Context, req *taskrouterv1.SetTaskDispositionRequest) (*taskrouterv1.Task, error) {
+	tid, err := tenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetDispositionId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "disposition_id is required")
+	}
+
+	disposition, err := s.Registry.GetDisposition(ctx, tid, req.GetDispositionId())
+	if err == pgconfig.ErrNotFound {
+		return nil, status.Errorf(codes.InvalidArgument, "disposition %q does not exist", req.GetDispositionId())
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get disposition: %v", err)
+	}
+
+	err = s.Store.SetTaskDisposition(ctx, tid.String(), req.GetTaskId(), disposition.DispositionID, disposition.Name)
+	if err == redisdomain.ErrNotFound {
+		return nil, status.Errorf(codes.NotFound, "task %q not found", req.GetTaskId())
+	}
+	if err == redisdomain.ErrTaskNotWrapUp {
+		return nil, status.Errorf(codes.FailedPrecondition, "task %q is not in WrapUp", req.GetTaskId())
+	}
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "set task disposition: %v", err)
+	}
+
+	if err := s.Events.TaskDispositionSet(ctx, tid, req.GetTaskId(), disposition.DispositionID, disposition.Name); err != nil {
+		s.logger().Error("publish task disposition set failed", "error", err)
+	}
 
 	task, err := s.Store.GetTask(ctx, tid.String(), req.GetTaskId())
 	if err != nil {

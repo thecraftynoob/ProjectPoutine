@@ -39,6 +39,7 @@ const (
 	TaskPending   TaskStatus = "Pending"
 	TaskReserved  TaskStatus = "Reserved"
 	TaskActive    TaskStatus = "Active"
+	TaskWrapUp    TaskStatus = "WrapUp"
 	TaskCompleted TaskStatus = "Completed"
 )
 
@@ -50,23 +51,31 @@ const (
 // not a database lookup.
 func IsValidTaskStatus(s string) bool {
 	switch TaskStatus(s) {
-	case TaskPending, TaskReserved, TaskActive, TaskCompleted:
+	case TaskPending, TaskReserved, TaskActive, TaskWrapUp, TaskCompleted:
 		return true
 	default:
 		return false
 	}
 }
 
-// Task mirrors spec Section 2.2.
+// Task mirrors spec Section 2.2, extended with the Wrap Up / Disposition
+// two-step completion lifecycle: WrapUpTimeoutSeconds (set at enqueue
+// time), and DispositionID/DispositionName (set via SetTaskDisposition,
+// only while Status == TaskWrapUp).
 type Task struct {
-	TaskID                string                    `json:"taskId"`
-	QueueID               string                    `json:"queueId"`
-	TaskType              string                    `json:"taskType"`
-	RequiredAttributes    map[string]AttributeValue `json:"requiredAttributes"`
-	EnqueuedAt            time.Time                 `json:"enqueuedAt"`
-	Status                TaskStatus                `json:"status"`
-	CurrentReservationID  string                    `json:"currentReservationId"`
-	AssignedAgentID       string                    `json:"assignedAgentId"`
+	TaskID               string                    `json:"taskId"`
+	QueueID              string                    `json:"queueId"`
+	TaskType             string                    `json:"taskType"`
+	RequiredAttributes   map[string]AttributeValue `json:"requiredAttributes"`
+	EnqueuedAt           time.Time                 `json:"enqueuedAt"`
+	Status               TaskStatus                `json:"status"`
+	CurrentReservationID string                    `json:"currentReservationId"`
+	AssignedAgentID      string                    `json:"assignedAgentId"`
+	// WrapUpTimeoutSeconds is 0 when no wrap-up timer is configured for
+	// this task (see spec: EndTask's doc comment).
+	WrapUpTimeoutSeconds int32  `json:"wrapUpTimeoutSeconds"`
+	DispositionID        string `json:"dispositionId"`
+	DispositionName      string `json:"dispositionName"`
 }
 
 // ReservationStatus enumerates spec Section 5.2's Reservation lifecycle
@@ -113,6 +122,14 @@ const StatusAvailable = "Available"
 // effect of any reservation-reject transition (spec Section 5.3). Never
 // applied as a side effect of agent deletion.
 const StatusNotResponding = "Not Responding"
+
+// StatusWrapUp is the system-assigned status applied to an agent as a side
+// effect of EndTask (ending the communication channel moves the agent into
+// Wrap Up, per the Wrap Up / Disposition two-step completion lifecycle).
+// Reset to StatusAvailable either automatically (the task's
+// WrapUpTimeoutSeconds timer reaching 0) or as a side effect of
+// CompleteTask being invoked while the task is in WrapUp.
+const StatusWrapUp = "WrapUp"
 
 // StatusOffline is the default status for a newly created agent whose
 // caller did not specify one (spec Section 2.1).

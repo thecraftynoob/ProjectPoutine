@@ -374,6 +374,177 @@ func local_request_TaskRouterAdminService_RemoveAttribute_0(ctx context.Context,
 	return msg, metadata, err
 }
 
+func request_TaskRouterAdminService_RegisterDisposition_0(ctx context.Context, marshaler runtime.Marshaler, client TaskRouterAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RegisterDispositionRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.RegisterDisposition(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_TaskRouterAdminService_RegisterDisposition_0(ctx context.Context, marshaler runtime.Marshaler, server TaskRouterAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RegisterDispositionRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.RegisterDisposition(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_TaskRouterAdminService_ListDispositions_0(ctx context.Context, marshaler runtime.Marshaler, client TaskRouterAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListDispositionsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.ListDispositions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_TaskRouterAdminService_ListDispositions_0(ctx context.Context, marshaler runtime.Marshaler, server TaskRouterAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListDispositionsRequest
+		metadata runtime.ServerMetadata
+	)
+	msg, err := server.ListDispositions(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_TaskRouterAdminService_RemoveDisposition_0(ctx context.Context, marshaler runtime.Marshaler, client TaskRouterAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RemoveDispositionRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["disposition_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "disposition_id")
+	}
+	protoReq.DispositionId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "disposition_id", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.RemoveDisposition(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_TaskRouterAdminService_RemoveDisposition_0(ctx context.Context, marshaler runtime.Marshaler, server TaskRouterAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RemoveDispositionRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["disposition_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "disposition_id")
+	}
+	protoReq.DispositionId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "disposition_id", err)
+	}
+	msg, err := server.RemoveDisposition(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_TaskRouterAdminService_AssociateQueueDispositions_0(ctx context.Context, marshaler runtime.Marshaler, client TaskRouterAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq AssociateQueueDispositionsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	val, ok := pathParams["queue_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "queue_id")
+	}
+	protoReq.QueueId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "queue_id", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.AssociateQueueDispositions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_TaskRouterAdminService_AssociateQueueDispositions_0(ctx context.Context, marshaler runtime.Marshaler, server TaskRouterAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq AssociateQueueDispositionsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	val, ok := pathParams["queue_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "queue_id")
+	}
+	protoReq.QueueId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "queue_id", err)
+	}
+	msg, err := server.AssociateQueueDispositions(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_TaskRouterAdminService_ListQueueDispositions_0(ctx context.Context, marshaler runtime.Marshaler, client TaskRouterAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListQueueDispositionsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["queue_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "queue_id")
+	}
+	protoReq.QueueId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "queue_id", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.ListQueueDispositions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_TaskRouterAdminService_ListQueueDispositions_0(ctx context.Context, marshaler runtime.Marshaler, server TaskRouterAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListQueueDispositionsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["queue_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "queue_id")
+	}
+	protoReq.QueueId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "queue_id", err)
+	}
+	msg, err := server.ListQueueDispositions(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 // RegisterTaskRouterAdminServiceHandlerServer registers the http handlers for service TaskRouterAdminService to "mux".
 // UnaryRPC     :call TaskRouterAdminServiceServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -599,6 +770,106 @@ func RegisterTaskRouterAdminServiceHandlerServer(ctx context.Context, mux *runti
 			return
 		}
 		forward_TaskRouterAdminService_RemoveAttribute_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_TaskRouterAdminService_RegisterDisposition_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/RegisterDisposition", runtime.WithHTTPPathPattern("/v1/admin/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_TaskRouterAdminService_RegisterDisposition_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_RegisterDisposition_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_TaskRouterAdminService_ListDispositions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/ListDispositions", runtime.WithHTTPPathPattern("/v1/admin/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_TaskRouterAdminService_ListDispositions_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_ListDispositions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodDelete, pattern_TaskRouterAdminService_RemoveDisposition_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/RemoveDisposition", runtime.WithHTTPPathPattern("/v1/admin/dispositions/{disposition_id}"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_TaskRouterAdminService_RemoveDisposition_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_RemoveDisposition_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_TaskRouterAdminService_AssociateQueueDispositions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/AssociateQueueDispositions", runtime.WithHTTPPathPattern("/v1/admin/queues/{queue_id}/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_TaskRouterAdminService_AssociateQueueDispositions_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_AssociateQueueDispositions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_TaskRouterAdminService_ListQueueDispositions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/ListQueueDispositions", runtime.WithHTTPPathPattern("/v1/admin/queues/{queue_id}/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_TaskRouterAdminService_ListQueueDispositions_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_ListQueueDispositions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -827,33 +1098,128 @@ func RegisterTaskRouterAdminServiceHandlerClient(ctx context.Context, mux *runti
 		}
 		forward_TaskRouterAdminService_RemoveAttribute_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_TaskRouterAdminService_RegisterDisposition_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/RegisterDisposition", runtime.WithHTTPPathPattern("/v1/admin/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_TaskRouterAdminService_RegisterDisposition_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_RegisterDisposition_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_TaskRouterAdminService_ListDispositions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/ListDispositions", runtime.WithHTTPPathPattern("/v1/admin/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_TaskRouterAdminService_ListDispositions_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_ListDispositions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodDelete, pattern_TaskRouterAdminService_RemoveDisposition_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/RemoveDisposition", runtime.WithHTTPPathPattern("/v1/admin/dispositions/{disposition_id}"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_TaskRouterAdminService_RemoveDisposition_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_RemoveDisposition_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_TaskRouterAdminService_AssociateQueueDispositions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/AssociateQueueDispositions", runtime.WithHTTPPathPattern("/v1/admin/queues/{queue_id}/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_TaskRouterAdminService_AssociateQueueDispositions_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_AssociateQueueDispositions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_TaskRouterAdminService_ListQueueDispositions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/taskrouter.v1.TaskRouterAdminService/ListQueueDispositions", runtime.WithHTTPPathPattern("/v1/admin/queues/{queue_id}/dispositions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_TaskRouterAdminService_ListQueueDispositions_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_TaskRouterAdminService_ListQueueDispositions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
-	pattern_TaskRouterAdminService_RegisterQueue_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "queues"}, ""))
-	pattern_TaskRouterAdminService_ListQueues_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "queues"}, ""))
-	pattern_TaskRouterAdminService_GetQueue_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "queues", "queue_id"}, ""))
-	pattern_TaskRouterAdminService_RemoveQueue_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "queues", "queue_id"}, ""))
-	pattern_TaskRouterAdminService_RegisterStatus_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "statuses"}, ""))
-	pattern_TaskRouterAdminService_ListStatuses_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "statuses"}, ""))
-	pattern_TaskRouterAdminService_RemoveStatus_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "statuses", "status"}, ""))
-	pattern_TaskRouterAdminService_RegisterAttribute_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "attributes"}, ""))
-	pattern_TaskRouterAdminService_ListAttributes_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "attributes"}, ""))
-	pattern_TaskRouterAdminService_GetAttribute_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "attributes", "name"}, ""))
-	pattern_TaskRouterAdminService_RemoveAttribute_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "attributes", "name"}, ""))
+	pattern_TaskRouterAdminService_RegisterQueue_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "queues"}, ""))
+	pattern_TaskRouterAdminService_ListQueues_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "queues"}, ""))
+	pattern_TaskRouterAdminService_GetQueue_0                   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "queues", "queue_id"}, ""))
+	pattern_TaskRouterAdminService_RemoveQueue_0                = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "queues", "queue_id"}, ""))
+	pattern_TaskRouterAdminService_RegisterStatus_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "statuses"}, ""))
+	pattern_TaskRouterAdminService_ListStatuses_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "statuses"}, ""))
+	pattern_TaskRouterAdminService_RemoveStatus_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "statuses", "status"}, ""))
+	pattern_TaskRouterAdminService_RegisterAttribute_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "attributes"}, ""))
+	pattern_TaskRouterAdminService_ListAttributes_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "attributes"}, ""))
+	pattern_TaskRouterAdminService_GetAttribute_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "attributes", "name"}, ""))
+	pattern_TaskRouterAdminService_RemoveAttribute_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "attributes", "name"}, ""))
+	pattern_TaskRouterAdminService_RegisterDisposition_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "dispositions"}, ""))
+	pattern_TaskRouterAdminService_ListDispositions_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "dispositions"}, ""))
+	pattern_TaskRouterAdminService_RemoveDisposition_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "dispositions", "disposition_id"}, ""))
+	pattern_TaskRouterAdminService_AssociateQueueDispositions_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "admin", "queues", "queue_id", "dispositions"}, ""))
+	pattern_TaskRouterAdminService_ListQueueDispositions_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "admin", "queues", "queue_id", "dispositions"}, ""))
 )
 
 var (
-	forward_TaskRouterAdminService_RegisterQueue_0     = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_ListQueues_0        = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_GetQueue_0          = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_RemoveQueue_0       = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_RegisterStatus_0    = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_ListStatuses_0      = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_RemoveStatus_0      = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_RegisterAttribute_0 = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_ListAttributes_0    = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_GetAttribute_0      = runtime.ForwardResponseMessage
-	forward_TaskRouterAdminService_RemoveAttribute_0   = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RegisterQueue_0              = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_ListQueues_0                 = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_GetQueue_0                   = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RemoveQueue_0                = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RegisterStatus_0             = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_ListStatuses_0               = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RemoveStatus_0               = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RegisterAttribute_0          = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_ListAttributes_0             = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_GetAttribute_0               = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RemoveAttribute_0            = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RegisterDisposition_0        = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_ListDispositions_0           = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_RemoveDisposition_0          = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_AssociateQueueDispositions_0 = runtime.ForwardResponseMessage
+	forward_TaskRouterAdminService_ListQueueDispositions_0      = runtime.ForwardResponseMessage
 )

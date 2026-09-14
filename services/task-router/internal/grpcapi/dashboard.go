@@ -32,7 +32,7 @@ func (s *TaskRouterServer) GetDashboard(ctx context.Context, _ *taskrouterv1.Get
 		if t.AssignedAgentID == "" {
 			continue
 		}
-		if t.Status == redisdomain.TaskReserved || t.Status == redisdomain.TaskActive {
+		if t.Status == redisdomain.TaskReserved || t.Status == redisdomain.TaskActive || t.Status == redisdomain.TaskWrapUp {
 			assignedCounts[t.AssignedAgentID]++
 		}
 	}
