@@ -102,7 +102,9 @@ type TaskRouterServiceClient interface {
 	// Pending status. Rejected if the queue doesn't exist, an attribute is
 	// invalid, or a caller-supplied task ID collides with an existing one.
 	EnqueueTask(ctx context.Context, in *EnqueueTaskRequest, opts ...grpc.CallOption) (*Task, error)
-	// ListTasks enumerates all tasks for the tenant.
+	// ListTasks enumerates all tasks for the tenant, optionally filtered to
+	// one status via the `status` query parameter (GET /v1/tasks?status=Pending)
+	// -- see ListTasksRequest.status's doc comment.
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	// GetTask retrieves one task's current state.
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*Task, error)
@@ -367,7 +369,9 @@ type TaskRouterServiceServer interface {
 	// Pending status. Rejected if the queue doesn't exist, an attribute is
 	// invalid, or a caller-supplied task ID collides with an existing one.
 	EnqueueTask(context.Context, *EnqueueTaskRequest) (*Task, error)
-	// ListTasks enumerates all tasks for the tenant.
+	// ListTasks enumerates all tasks for the tenant, optionally filtered to
+	// one status via the `status` query parameter (GET /v1/tasks?status=Pending)
+	// -- see ListTasksRequest.status's doc comment.
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	// GetTask retrieves one task's current state.
 	GetTask(context.Context, *GetTaskRequest) (*Task, error)

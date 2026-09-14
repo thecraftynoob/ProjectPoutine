@@ -138,6 +138,70 @@ func TestEnqueueTask_UniquenessOnCreate(t *testing.T) {
 	}
 }
 
+// --- ListTasks: optional status filter ---
+
+func TestListTasks_NoFilterReturnsEveryStatus(t *testing.T) {
+	ctx := context.Background()
+	s, tenant := newTestStore(t)
+
+	mustCreateAgent(t, ctx, s, tenant, availableAgentInput("agent-1", []string{"q1"}, "chat", 1))
+	mustEnqueueTask(t, ctx, s, tenant, EnqueueTaskInput{TaskID: "task-pending", QueueID: "q1", TaskType: "chat"})
+
+	got, err := s.ListTasks(ctx, tenant, "")
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 task with no filter, got %d", len(got))
+	}
+}
+
+func TestListTasks_StatusFilterOnlyReturnsMatching(t *testing.T) {
+	ctx := context.Background()
+	s, tenant := newTestStore(t)
+
+	// One agent with capacity for exactly one active task, so one of the
+	// two enqueued tasks gets matched (-> Reserved) and the other stays
+	// Pending -- giving us two genuinely different statuses to filter
+	// between, not just two Pending tasks.
+	mustCreateAgent(t, ctx, s, tenant, availableAgentInput("agent-1", []string{"q1"}, "chat", 1))
+	mustEnqueueTask(t, ctx, s, tenant, EnqueueTaskInput{TaskID: "task-1", QueueID: "q1", TaskType: "chat"})
+	mustEnqueueTask(t, ctx, s, tenant, EnqueueTaskInput{TaskID: "task-2", QueueID: "q1", TaskType: "chat"})
+
+	outcomes, err := s.EvaluateOnce(ctx, tenant)
+	if err != nil {
+		t.Fatalf("EvaluateOnce: %v", err)
+	}
+	if len(outcomes) != 1 {
+		t.Fatalf("expected exactly 1 match (agent capacity=1), got %d", len(outcomes))
+	}
+	matchedTaskID := outcomes[0].Reservation.TaskID
+
+	reserved, err := s.ListTasks(ctx, tenant, TaskReserved)
+	if err != nil {
+		t.Fatalf("ListTasks(Reserved): %v", err)
+	}
+	if len(reserved) != 1 || reserved[0].TaskID != matchedTaskID {
+		t.Fatalf("expected exactly the matched task %q filtered to Reserved, got %+v", matchedTaskID, reserved)
+	}
+
+	pending, err := s.ListTasks(ctx, tenant, TaskPending)
+	if err != nil {
+		t.Fatalf("ListTasks(Pending): %v", err)
+	}
+	if len(pending) != 1 || pending[0].TaskID == matchedTaskID {
+		t.Fatalf("expected exactly the UNmatched task filtered to Pending, got %+v", pending)
+	}
+
+	completed, err := s.ListTasks(ctx, tenant, TaskCompleted)
+	if err != nil {
+		t.Fatalf("ListTasks(Completed): %v", err)
+	}
+	if len(completed) != 0 {
+		t.Fatalf("expected 0 Completed tasks, got %d", len(completed))
+	}
+}
+
 func TestPendingTasksFIFO_StrictOrderByEnqueuedAt(t *testing.T) {
 	ctx := context.Background()
 	s, tenant := newTestStore(t)

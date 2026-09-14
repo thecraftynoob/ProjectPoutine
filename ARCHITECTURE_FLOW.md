@@ -80,7 +80,7 @@ a `runtime.ServeMux` API Gateway builds into its HTTP server
 | POST | `/v1/agents/{agent_id}/attributes` | `TaskRouterService.ReplaceAgentAttributes` | required |
 | GET | `/v1/agents/{agent_id}/offers` | `TaskRouterService.ListAgentPendingOffers` | required |
 | POST | `/v1/tasks` | `TaskRouterService.EnqueueTask` | required |
-| GET | `/v1/tasks` | `TaskRouterService.ListTasks` | required |
+| GET | `/v1/tasks` | `TaskRouterService.ListTasks` | required — optional `?status=` query param (`Pending`\|`Reserved`\|`Active`\|`Completed`) filters to one status; an unrecognized value is rejected with `InvalidArgument` rather than silently returning an empty list (2026-09-14) |
 | GET | `/v1/tasks/{task_id}` | `TaskRouterService.GetTask` | required |
 | POST | `/v1/tasks/{task_id}/complete` | `TaskRouterService.CompleteTask` | required |
 | POST | `/v1/reservations/{reservation_id}/accept` | `TaskRouterService.AcceptReservation` | required |

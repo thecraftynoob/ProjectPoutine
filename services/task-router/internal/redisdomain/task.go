@@ -105,8 +105,15 @@ func decodeTask(taskID string, fields map[string]string) (Task, error) {
 // ListTasks returns every task for the tenant, in unspecified order (the
 // "list all tasks" read-only capability, spec Section 3.3 -- FIFO
 // ordering only matters for the matching algorithm's own pending scan,
-// see PendingTasksFIFO).
-func (s *Store) ListTasks(ctx context.Context, tenantID string) ([]Task, error) {
+// see PendingTasksFIFO), optionally narrowed to a single status.
+//
+// statusFilter == "" (the proto3 zero value for an unset optional field)
+// means no filtering -- return every task regardless of status. There is
+// no separate Redis index by status; the tenant's task Set has no
+// status-keyed structure to query directly, so filtering is a plain
+// in-memory check applied while hydrating each task via GetTask, which
+// this call already does unconditionally.
+func (s *Store) ListTasks(ctx context.Context, tenantID string, statusFilter TaskStatus) ([]Task, error) {
 	ids, err := s.client.SMembers(ctx, tasksSetKey(tenantID)).Result()
 	if err != nil {
 		return nil, fmt.Errorf("redisdomain: list tasks: %w", err)
@@ -119,6 +126,9 @@ func (s *Store) ListTasks(ctx context.Context, tenantID string) ([]Task, error) 
 		}
 		if err != nil {
 			return nil, err
+		}
+		if statusFilter != "" && t.Status != statusFilter {
+			continue
 		}
 		tasks = append(tasks, t)
 	}

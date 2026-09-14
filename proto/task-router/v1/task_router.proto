@@ -133,7 +133,9 @@ service TaskRouterService {
     };
   }
 
-  // ListTasks enumerates all tasks for the tenant.
+  // ListTasks enumerates all tasks for the tenant, optionally filtered to
+  // one status via the `status` query parameter (GET /v1/tasks?status=Pending)
+  // -- see ListTasksRequest.status's doc comment.
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
     option (google.api.http) = {
       get: "/v1/tasks"
@@ -359,7 +361,17 @@ message EnqueueTaskRequest {
   google.protobuf.Timestamp enqueued_at = 5;
 }
 
-message ListTasksRequest {}
+message ListTasksRequest {
+  // Optional. If set, only tasks currently in this status are returned --
+  // one of "Pending", "Reserved", "Active", "Completed" (spec Section
+  // 5.1). An unrecognized value is rejected with InvalidArgument rather
+  // than silently returning an empty list (mirrors SetAgentStatus's
+  // existing validate-before-filter pattern). Empty string (the proto3
+  // zero value, and the field's absence in a plain GET /v1/tasks with no
+  // query param) means "no filter -- return every task", not "match the
+  // empty status".
+  string status = 1;
+}
 
 message ListTasksResponse {
   repeated Task tasks = 1;

@@ -22,7 +22,7 @@ func (s *TaskRouterServer) GetDashboard(ctx context.Context, _ *taskrouterv1.Get
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list agents: %v", err)
 	}
-	tasks, err := s.Store.ListTasks(ctx, tid.String())
+	tasks, err := s.Store.ListTasks(ctx, tid.String(), "")
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list tasks: %v", err)
 	}

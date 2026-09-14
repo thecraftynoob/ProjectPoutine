@@ -42,6 +42,21 @@ const (
 	TaskCompleted TaskStatus = "Completed"
 )
 
+// IsValidTaskStatus reports whether s is one of the four fixed spec
+// Section 5.1 lifecycle states. Unlike Agent Status (a tenant-configurable
+// Postgres registry, see pgconfig.Registry.StatusExists), Task status is a
+// small, fixed enum defined by the spec itself -- not something a tenant
+// can register/remove values from -- so this is a plain in-code check,
+// not a database lookup.
+func IsValidTaskStatus(s string) bool {
+	switch TaskStatus(s) {
+	case TaskPending, TaskReserved, TaskActive, TaskCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Task mirrors spec Section 2.2.
 type Task struct {
 	TaskID                string                    `json:"taskId"`

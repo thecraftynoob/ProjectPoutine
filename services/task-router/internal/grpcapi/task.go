@@ -69,12 +69,18 @@ func (s *TaskRouterServer) EnqueueTask(ctx context.Context, req *taskrouterv1.En
 }
 
 // ListTasks implements spec Section 3.3's "List Tasks".
-func (s *TaskRouterServer) ListTasks(ctx context.Context, _ *taskrouterv1.ListTasksRequest) (*taskrouterv1.ListTasksResponse, error) {
+func (s *TaskRouterServer) ListTasks(ctx context.Context, req *taskrouterv1.ListTasksRequest) (*taskrouterv1.ListTasksResponse, error) {
 	tid, err := tenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := s.Store.ListTasks(ctx, tid.String())
+
+	statusFilter := req.GetStatus()
+	if statusFilter != "" && !redisdomain.IsValidTaskStatus(statusFilter) {
+		return nil, status.Errorf(codes.InvalidArgument, "status %q is not a valid task status", statusFilter)
+	}
+
+	tasks, err := s.Store.ListTasks(ctx, tid.String(), redisdomain.TaskStatus(statusFilter))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list tasks: %v", err)
 	}

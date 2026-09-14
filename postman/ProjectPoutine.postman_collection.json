@@ -755,15 +755,24 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{api_gateway_base}}/v1/tasks",
+              "raw": "{{api_gateway_base}}/v1/tasks?status=",
               "host": [
                 "{{api_gateway_base}}"
               ],
               "path": [
                 "v1",
                 "tasks"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Optional. One of Pending, Reserved, Active, Completed (TaskRouterService.ListTasks.status). Filters to tasks in that status only. An unrecognized value is rejected with 400 InvalidArgument rather than silently returning an empty list. Enable this param and set a value to use it -- disabled by default so the request returns every task, matching this collection folder's default sequential-flow behavior."
+                }
               ]
-            }
+            },
+            "description": "Required auth. TaskRouterService.ListTasks. Optional ?status= query param filters to one status (Pending/Reserved/Active/Completed) -- see the disabled status query param above for how to use it."
           }
         },
         {

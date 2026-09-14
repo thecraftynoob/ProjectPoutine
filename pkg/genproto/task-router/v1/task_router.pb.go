@@ -1228,7 +1228,16 @@ func (x *EnqueueTaskRequest) GetEnqueuedAt() *timestamppb.Timestamp {
 }
 
 type ListTasksRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Optional. If set, only tasks currently in this status are returned --
+	// one of "Pending", "Reserved", "Active", "Completed" (spec Section
+	// 5.1). An unrecognized value is rejected with InvalidArgument rather
+	// than silently returning an empty list (mirrors SetAgentStatus's
+	// existing validate-before-filter pattern). Empty string (the proto3
+	// zero value, and the field's absence in a plain GET /v1/tasks with no
+	// query param) means "no filter -- return every task", not "match the
+	// empty status".
+	Status        string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1261,6 +1270,13 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
 	return file_task_router_v1_task_router_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListTasksRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
 }
 
 type ListTasksResponse struct {
@@ -1740,8 +1756,9 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"enqueuedAt\x1ad\n" +
 	"\x17RequiredAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x123\n" +
-	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\"\x12\n" +
-	"\x10ListTasksRequest\">\n" +
+	"\x05value\x18\x02 \x01(\v2\x1d.taskrouter.v1.AttributeValueR\x05value:\x028\x01\"*\n" +
+	"\x10ListTasksRequest\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\">\n" +
 	"\x11ListTasksResponse\x12)\n" +
 	"\x05tasks\x18\x01 \x03(\v2\x13.taskrouter.v1.TaskR\x05tasks\")\n" +
 	"\x0eGetTaskRequest\x12\x17\n" +
