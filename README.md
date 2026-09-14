@@ -12,6 +12,7 @@ structural.
 - [`CLAUDE.md`](./CLAUDE.md) — persistent project rules (data-flow mapping, K8s-first networking, domain boundaries). Binding for every change, not just suggestions.
 - [`ARCHITECTURE_FLOW.md`](./ARCHITECTURE_FLOW.md) — the living map of actual service-to-service communication (gRPC contracts, NATS event catalog, WebSocket transports, DB table ownership). Kept current per `CLAUDE.md` Rule 1 — update it in the same change that adds/removes a service, endpoint, or event.
 - [`GAPS.md`](./GAPS.md) — the living registry of deliberate POC-stage shortcuts and stand-ins (fake/shared secrets, missing validation, unbuilt infrastructure) and what a real version of each would need. Kept current per `CLAUDE.md` Rule 4.
+- [`postman/`](./postman/) — a working Postman collection covering every REST route this platform exposes, chained end-to-end (create a tenant → agent → chat interaction → accept → complete) and verified via `newman` against the real cluster. Kept current per `CLAUDE.md` Rule 5 — see `postman/README.md`.
 - [`poutine-poc-architecture.md`](./poutine-poc-architecture.md) — a collaborator's separate ESXi/k3s voice PoC (FreeSWITCH, Kafka, Postgres, Redis), kept here as reference for merging voice/SIP work into `voice-media-gateway`. See `PROGRESS.md`'s "Voice merge" section for compatibility notes and open questions — not yet merged.
 
 ## Status

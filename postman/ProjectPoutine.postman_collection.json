@@ -1,0 +1,1056 @@
+{
+  "info": {
+    "name": "ProjectPoutine",
+    "_postman_id": "b8e1f3d0-2b7a-4c9e-9f1a-6c5d0a3e7f21",
+    "description": "ProjectPoutine CCaaS platform API collection. Covers Tenant & Identity, Task Router (agent/task/reservation/admin), Digital Channels Gateway's inbound webhook, and API Gateway's ws-ticket endpoint.\n\nSee this repo's ARCHITECTURE_FLOW.md §1.1 for the full REST route table this collection mirrors, and GAPS.md for known auth/scope caveats (e.g. Digital Channels Gateway's webhook is intentionally unauthenticated this milestone).\n\n**Update this collection in the same change that adds/changes a REST route** — same discipline as ARCHITECTURE_FLOW.md (CLAUDE.md Rule 1) and GAPS.md (Rule 4). See postman/README.md for the full maintenance rule.\n\nRequires kubectl port-forward for api-gateway-svc and digital-channels-gateway-svc — see the collection-level variables and postman/README.md for exact commands.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "api_gateway_base",
+      "value": "http://localhost:18080",
+      "type": "string"
+    },
+    {
+      "key": "dcg_base",
+      "value": "http://localhost:18086",
+      "type": "string"
+    },
+    {
+      "key": "agent_presence_ws_base",
+      "value": "ws://localhost:18085",
+      "type": "string"
+    },
+    {
+      "key": "tenant_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "jwt",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "queue_id",
+      "value": "support",
+      "type": "string"
+    },
+    {
+      "key": "agent_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "task_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reservation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ws_ticket",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Tenant & Identity",
+      "item": [
+        {
+          "name": "Create Tenant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.tenantId) { pm.collectionVariables.set('tenant_id', body.tenantId); }",
+                  "pm.test('201/200 and tenantId present', () => { pm.expect([200,201]).to.include(pm.response.code); pm.expect(body.tenantId).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tenants",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tenants"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Test Tenant\"\n}"
+            },
+            "description": "Exempt (bootstrapping). TenantService.CreateTenant."
+          }
+        },
+        {
+          "name": "List Tenants",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tenants",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tenants"
+              ]
+            },
+            "description": "Exempt (registry read). TenantService.ListTenants."
+          }
+        },
+        {
+          "name": "Get Tenant",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tenants/{{tenant_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "{{tenant_id}}"
+              ]
+            },
+            "description": "Exempt (registry read). TenantService.GetTenant."
+          }
+        },
+        {
+          "name": "Create User (agent login)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.userId) { pm.collectionVariables.set('user_id', body.userId); }",
+                  "pm.test('201/200 and userId present', () => { pm.expect([200,201]).to.include(pm.response.code); pm.expect(body.userId).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tenants/{{tenant_id}}/users",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "{{tenant_id}}",
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"agent1\",\n  \"password\": \"AgentPass123!\",\n  \"roles\": [\"agent\"]\n}"
+            },
+            "description": "Exempt (bootstrapping). IdentityService.CreateUser. Run 'Create Tenant' first to set {{tenant_id}}.\n\nThe resulting user_id should be reused as the Task Router agent_id in 'Create Agent' below -- see this repo's GAPS.md entry on Agent<->User reconciliation for why that convention matters today."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.token) { pm.collectionVariables.set('jwt', body.token); }",
+                  "pm.test('200 and token present', () => { pm.expect(pm.response.code).to.equal(200); pm.expect(body.token).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/auth/login",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenantId\": \"{{tenant_id}}\",\n  \"username\": \"agent1\",\n  \"password\": \"AgentPass123!\"\n}"
+            },
+            "description": "Exempt (bootstrapping). IdentityService.Login. Sets {{jwt}}, used as the Bearer token by every 'required'-auth request in this collection via the collection-level auth setting."
+          }
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/users/{{user_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "description": "Required auth. IdentityService.GetUser."
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/users",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
+            },
+            "description": "Required auth. IdentityService.ListUsers."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Task Router - Admin Registries",
+      "item": [
+        {
+          "name": "Register Queue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/queues",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "queues"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"queueId\": \"{{queue_id}}\"\n}"
+            },
+            "description": "Required auth. TaskRouterAdminService.RegisterQueue. Must exist before EnqueueTask/CreateAgent reference it."
+          }
+        },
+        {
+          "name": "List Queues",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/queues",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "queues"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Queue",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/queues/{{queue_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "queues",
+                "{{queue_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/statuses",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "statuses"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Available\"\n}"
+            },
+            "description": "Required auth. TaskRouterAdminService.RegisterStatus. NOTE: 'Available' and 'Offline' and 'Not Responding' have spec-level significance (see TASK_ROUTER_SPECIFICATION.md) but are NOT auto-registered -- register any status value you intend to SetAgentStatus to."
+          }
+        },
+        {
+          "name": "List Statuses",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/statuses",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "statuses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register Attribute",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/attributes",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "attributes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"vip\",\n  \"type\": \"ATTRIBUTE_TYPE_BOOLEAN\"\n}"
+            },
+            "description": "Required auth. TaskRouterAdminService.RegisterAttribute. type is one of ATTRIBUTE_TYPE_NUMERIC / ATTRIBUTE_TYPE_BOOLEAN."
+          }
+        },
+        {
+          "name": "List Attributes",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/attributes",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "attributes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Attribute",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/attributes/vip",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "attributes",
+                "vip"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "Register Queue/Status/Attribute create the resources \"3. Task Router - Agents\" and \"4. Task Router - Tasks & Reservations\" depend on (a queue named {{queue_id}}, an \"Available\" status, a \"vip\" attribute). This folder deliberately does NOT include Remove* requests -- those moved to folder \"7. Cleanup (standalone, run last)\" so a full sequential 1-through-5 run never deletes a resource an earlier step still needs."
+    },
+    {
+      "name": "3. Task Router - Agents",
+      "item": [
+        {
+          "name": "Create Agent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.agentId) { pm.collectionVariables.set('agent_id', body.agentId); }",
+                  "pm.test('201/200 and agentId present', () => { pm.expect([200,201]).to.include(pm.response.code); pm.expect(body.agentId).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\": \"{{user_id}}\",\n  \"status\": \"Available\",\n  \"capacity\": {\n    \"chat\": { \"ready\": true, \"max\": 1, \"interruptible\": true }\n  },\n  \"queues\": [\"{{queue_id}}\"],\n  \"userId\": \"{{user_id}}\"\n}"
+            },
+            "description": "Required auth. TaskRouterService.CreateAgent.\n\nagentId defaults to {{user_id}} (the Tenant & Identity user created earlier) so Agent Presence's WebSocket sub-claim mapping works out of the box -- see GAPS.md's Agent<->User reconciliation entry.\n\nuserId (proto field) is a separate, purely-informational link added 2026-09-13 -- also set to {{user_id}} here, but note it is NOT what Agent Presence's WebSocket mapping actually uses (that's still the JWT sub claim == agentId path, not this field)."
+          }
+        },
+        {
+          "name": "List Agents",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Agent",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Set Agent Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/status",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Available\"\n}"
+            },
+            "description": "Required auth. TaskRouterService.SetAgentStatus. status must already be registered (see 'Register Status')."
+          }
+        },
+        {
+          "name": "Replace Agent Capacity",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/capacity",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "capacity"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capacity\": {\n    \"chat\": { \"ready\": true, \"max\": 2, \"interruptible\": true }\n  }\n}"
+            },
+            "description": "Required auth. TaskRouterService.ReplaceAgentCapacity. Full replacement map -- omitted channels are removed."
+          }
+        },
+        {
+          "name": "Toggle Channel Ready",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/capacity/chat/toggle",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "capacity",
+                "chat",
+                "toggle"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ready\": false\n}"
+            },
+            "description": "Required auth. TaskRouterService.ToggleChannelReady. {channel} path segment (here 'chat') selects which capacity entry."
+          }
+        },
+        {
+          "name": "Replace Agent Queues",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/queues",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "queues"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"queues\": [\"{{queue_id}}\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "Replace Agent Attributes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/attributes",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "attributes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attributes\": {\n    \"vip\": { \"isBool\": true, \"boolValue\": true }\n  }\n}"
+            },
+            "description": "Required auth. TaskRouterService.ReplaceAgentAttributes. Attribute name(s) must already be registered (see 'Register Attribute')."
+          }
+        },
+        {
+          "name": "List Agent Pending Offers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/offers",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "offers"
+              ]
+            },
+            "description": "Required auth. TaskRouterService.ListAgentPendingOffers. Use this to find {{reservation_id}} after enqueuing a task that matches this agent."
+          }
+        }
+      ],
+      "description": "Delete Agent is NOT included in this folder -- it moved to folder 7 (Cleanup), since deleting the agent here would leave no Available agent for folder 4 (Tasks & Reservations) / folder 5 (Digital Channels Gateway webhook) to match against."
+    },
+    {
+      "name": "4. Task Router - Tasks & Reservations",
+      "item": [
+        {
+          "name": "Enqueue Task",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.taskId) { pm.collectionVariables.set('task_id', body.taskId); }",
+                  "pm.test('201/200 and taskId present', () => { pm.expect([200,201]).to.include(pm.response.code); pm.expect(body.taskId).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tasks",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tasks"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"queueId\": \"{{queue_id}}\",\n  \"taskType\": \"chat\"\n}"
+            },
+            "description": "Required auth. TaskRouterService.EnqueueTask. Prefer 'Digital Channels Gateway > Inbound Chat Webhook' to create a task the same way a real channel would -- this request is here for direct Task Router testing without a channel in the loop."
+          }
+        },
+        {
+          "name": "List Tasks",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tasks",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tasks"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Task",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tasks/{{task_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tasks",
+                "{{task_id}}"
+              ]
+            },
+            "description": "Check currentReservationId here after enqueuing/webhook-posting a task -- if your agent was Available, it should already be matched. Copy that into {{reservation_id}} (or use 'List Agent Pending Offers')."
+          }
+        },
+        {
+          "name": "List Agent Pending Offers (post-match)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.reservations && body.reservations.length > 0) { pm.collectionVariables.set('reservation_id', body.reservations[0].reservationId); }",
+                  "pm.test('at least one pending offer for this agent', () => { pm.expect(body.reservations && body.reservations.length).to.be.above(0); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}/offers",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}",
+                "offers"
+              ]
+            },
+            "description": "Re-checks offers after task creation/matching (folder 3's copy of this same call ran before any task existed, so it was always empty). Captures {{reservation_id}} for Accept/Reject Reservation below. {{agent_id}} must still be Available and hold this queue/channel -- run folders 1-3 first without deleting the agent."
+          }
+        },
+        {
+          "name": "Accept Reservation",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/reservations/{{reservation_id}}/accept",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "reservations",
+                "{{reservation_id}}",
+                "accept"
+              ]
+            },
+            "description": "Required auth. TaskRouterService.AcceptReservation."
+          }
+        },
+        {
+          "name": "Complete Task",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/tasks/{{task_id}}/complete",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "tasks",
+                "{{task_id}}",
+                "complete"
+              ]
+            },
+            "description": "Required auth. TaskRouterService.CompleteTask. Publishes task.completed -- Historical Reporting durably ingests this; Background Worker Pool durably consumes it to trigger a wrap-up sync job (see GAPS.md for that pipeline's known simplifications)."
+          }
+        },
+        {
+          "name": "Get Dashboard",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/dashboard",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Digital Channels Gateway",
+      "item": [
+        {
+          "name": "Inbound Chat Webhook",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.taskId) { pm.collectionVariables.set('task_id', body.taskId); }",
+                  "pm.test('201 and taskId present', () => { pm.expect(pm.response.code).to.equal(201); pm.expect(body.taskId).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{dcg_base}}/webhooks/chat/{{tenant_id}}",
+              "host": [
+                "{{dcg_base}}"
+              ],
+              "path": [
+                "webhooks",
+                "chat",
+                "{{tenant_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"postman-session-1\",\n  \"from\": \"+15551234567\",\n  \"text\": \"Hi, I need help\",\n  \"queue_id\": \"{{queue_id}}\"\n}"
+            },
+            "description": "NOT via API Gateway -- direct to Digital Channels Gateway, a different trust boundary (see ARCHITECTURE_FLOW.md §4.2). Deliberately unauthenticated this milestone (no signature/secret verification) -- see GAPS.md's 'Digital Channels Gateway webhook has no signature/secret verification' entry, and services/digital-channels-gateway/internal/webhookapi's ServeHTTP doc comment for the full tradeoff. \n\nThis is 'create a chat interaction' -- the end-to-end path from an inbound message to a real Task Router Task."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. API Gateway - WebSocket Ticket",
+      "item": [
+        {
+          "name": "Mint WS Ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.ticket) { pm.collectionVariables.set('ws_ticket', body.ticket); }",
+                  "pm.test('200 and ticket present', () => { pm.expect(pm.response.code).to.equal(200); pm.expect(body.ticket).to.be.a('string'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/ws-ticket",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "ws-ticket"
+              ]
+            },
+            "description": "Required auth (normal session bearer token). Gateway-local -- not a backend RPC. Mints a short-lived (~45s) ticket for a browser client that can't set a custom Authorization header on a WebSocket upgrade. See services/api-gateway/internal/wsticket's doc comment for the short-TTL-not-single-use tradeoff (also in GAPS.md).\n\nAfter running this, open ws://localhost:18080/ws?ticket={{ws_ticket}} in a WebSocket client (Postman's WebSocket Request type, or wscat) WITHIN ~45 seconds. Requires kubectl port-forward svc/api-gateway-svc 18080:8080 (already assumed) since the proxy lives on API Gateway's HTTP port, not a separate one."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Cleanup & Alternate Paths (standalone)",
+      "description": "Destructive requests, deliberately isolated from the default sequential 1-through-5 flow. Run these ONLY after you are done exercising folders 1-5 against a given tenant, or standalone when testing admin-registry deletion specifically. Running any of these mid-sequence will break later requests that depend on the resource being removed. Also holds Reject Reservation -- an alternate path to Accept Reservation (folder 4), not a follow-on step; a reservation can only be accepted OR rejected, not both.",
+      "item": [
+        {
+          "name": "Remove Queue",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/queues/{{queue_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "queues",
+                "{{queue_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remove Status",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/statuses/Available",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "statuses",
+                "Available"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remove Attribute",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/admin/attributes/vip",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "attributes",
+                "vip"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Agent",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/agents/{{agent_id}}",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "agents",
+                "{{agent_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject Reservation",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{api_gateway_base}}/v1/reservations/{{reservation_id}}/reject",
+              "host": [
+                "{{api_gateway_base}}"
+              ],
+              "path": [
+                "v1",
+                "reservations",
+                "{{reservation_id}}",
+                "reject"
+              ]
+            },
+            "description": "Required auth. TaskRouterService.RejectReservation. NOT part of the default sequential flow -- mutually exclusive with Accept Reservation (a reservation must be Offered, not already Accepted, to reject it). Use this as an ALTERNATIVE to Accept Reservation when testing the reject path, not as a follow-on step."
+          }
+        }
+      ]
+    }
+  ]
+}

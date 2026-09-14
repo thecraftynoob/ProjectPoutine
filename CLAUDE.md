@@ -107,6 +107,27 @@ compounding it.
 
 ---
 
+## 5. Postman Collection Maintenance (Mandatory)
+
+**Rule:** `postman/ProjectPoutine.postman_collection.json` (created
+2026-09-14) must stay in sync with every REST route this platform
+exposes — same living-document discipline as Rules 1 and 4.
+
+**Action:** Whenever a `google.api.http` annotation is added, changed, or
+removed on any RPC — in the same change that updates
+`ARCHITECTURE_FLOW.md` §1.1's route table — update the Postman
+collection too: a new request in the right folder (or a new folder, for
+a new service/non-`/v1/...` surface like a webhook), updated example
+body/variable-capture scripts for a changed request/response shape, or
+removal of a request for a removed route. See `postman/README.md` for
+the exact structure (why destructive/mutually-exclusive requests live in
+a separate "Cleanup & Alternate Paths" folder, never inline in the
+default sequential flow) and the chaining convention (collection
+variables set by `test` scripts, so folders run top-to-bottom against a
+fresh tenant with no manual copy-pasting).
+
+---
+
 ## Reference documents
 
 Read these before making structural changes — they are the design source
@@ -117,3 +138,4 @@ of truth this file's rules are derived from:
 - [`PROGRESS.md`](./PROGRESS.md) — current build status and to-do list. Read this first each session.
 - [`ARCHITECTURE_FLOW.md`](./ARCHITECTURE_FLOW.md) — the living data-flow map this file's Rule 1 requires (create on first use per Rule 1).
 - [`GAPS.md`](./GAPS.md) — the living known-gaps/POC-stand-ins registry this file's Rule 4 requires.
+- [`postman/`](./postman/) — the living Postman collection this file's Rule 5 requires (`postman/README.md` has the full maintenance/usage details).
