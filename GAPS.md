@@ -273,3 +273,31 @@ buried in a doc comment nobody re-reads.
   A now return ONLY tenant A's rows, and
   `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname =
   'ccaas_app'` returns `f, f`.
+
+- **Every service's `Migrate()` granted the runtime role's table
+  privileges BEFORE running new migration files, not after (closed
+  2026-09-14).** `grantRuntimeRolePrivileges` names every one of a
+  service's own tables in one `GRANT` statement — including tables a
+  migration file not yet applied is about to create. This "worked" for
+  every deploy so far only by accident: every table any given `GRANT`
+  referenced already existed from a prior deploy by the time a new
+  migration file was added, so the ordering bug never had a chance to
+  fire. Found for real when `services/task-router/internal/pgconfig/
+  migrations/004_disposition_registry.sql` (Wrap Up / Disposition
+  lifecycle) was added and task-router's pod crash-looped on a genuinely
+  fresh rollout: `pgconfig: grant runtime role privileges: ERROR:
+  relation "task_router_dispositions" does not exist (SQLSTATE 42P01)`.
+  **Fix:** in all four services (Task Router, Tenant & Identity,
+  Historical Reporting, Background Worker Pool), the `GRANT` now runs
+  strictly AFTER the migration-file loop completes, not folded into the
+  same transaction as role creation/`schema_migrations` table creation
+  beforehand. The three services using the advisory-lock-guarded
+  role-creation pattern (Tenant & Identity, Historical Reporting,
+  Background Worker Pool) gained a second, equally lock-guarded
+  transaction for the `GRANT` step specifically (concurrent `GRANT`
+  statements on the same table can themselves race — the same
+  "tuple concurrently updated" failure mode this repo has hit before, see
+  the entry above). Verified via `go test ./...` across the whole module
+  (every affected package's tests call `Migrate` against live Postgres)
+  and a live task-router redeploy applying `004_disposition_registry.sql`
+  cleanly on the first attempt after the fix.

@@ -37,13 +37,21 @@ var migrationsFS embed.FS
 // Also idempotently provisions the shared, non-superuser runtime role
 // (see ensureRuntimeRole's doc comment) and grants it exactly the
 // privileges this service's own tables need -- see
-// grantRuntimeRolePrivileges. This must run BEFORE this service's real
-// gRPC-serving pools are opened as that role
-// (services/tenant-identity/cmd/main.go), since a role with no GRANTs yet
-// would fail every query the moment the service started using it.
+// grantRuntimeRolePrivileges. Role creation runs BEFORE the migration-file
+// loop; the GRANT itself runs AFTER it (its own separate advisory-lock-
+// guarded step below), not before -- see that step's own comment for why:
+// granting before new migration files run would fail with "relation does
+// not exist" the moment a migration adds a table this service didn't have
+// yet (a real bug found and fixed 2026-09-14 in
+// services/task-router/internal/pgconfig/migrate.go, applied here
+// preemptively -- see GAPS.md's "Closed gaps"). Either way, both steps
+// must run BEFORE this service's real gRPC-serving pools are opened as
+// that role (services/tenant-identity/cmd/main.go), since a role with no
+// GRANTs yet would fail every query the moment the service started using
+// it.
 //
-// The role-creation/grant step runs inside its own
-// pg_advisory_xact_lock-guarded transaction, unlike the rest of this
+// The role-creation step (and the GRANT step below) each run inside their
+// own pg_advisory_xact_lock-guarded transaction, unlike the rest of this
 // function's plain pool.Exec calls: this package's own pgstore_test.go
 // AND internal/grpcapi's test package both independently call Migrate
 // against the same live Postgres instance, and `go test ./...` runs
@@ -53,15 +61,15 @@ var migrationsFS embed.FS
 // need to update that table's ACL entry in pg_class, and observed in
 // practice (this repo's own `go test ./...` run) as Postgres error
 // XX000 "tuple concurrently updated" when two sessions' GRANTs raced.
-// The advisory lock serializes ensureRuntimeRole+grantRuntimeRolePrivileges
-// across concurrent Migrate callers, mirroring the exact fix
-// services/historical-reporting/internal/pgstore/migrate.go and
-// services/background-worker-pool/internal/pgstore/migrate.go already
-// apply for their schema_migrations table creation (this repo has hit
-// this shape of race more than once). Committed and released before the
-// migration-file loop below runs (which has its own, separate
+// The advisory lock serializes both ensureRuntimeRole and
+// grantRuntimeRolePrivileges across concurrent Migrate callers, mirroring
+// the exact fix services/historical-reporting/internal/pgstore/migrate.go
+// and services/background-worker-pool/internal/pgstore/migrate.go already
+// apply (this repo has hit this shape of race more than once). Each
+// guarded transaction is committed and released before the next step
+// runs; the migration-file loop in between has its own, separate
 // EXISTS-then-INSERT idempotency via tenant_identity_schema_migrations,
-// unaffected by this).
+// unaffected by either lock.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	roleTx, err := pool.Begin(ctx)
 	if err != nil {
@@ -83,10 +91,6 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	`); err != nil {
 		_ = roleTx.Rollback(ctx)
 		return fmt.Errorf("pgstore: create tenant_identity_schema_migrations: %w", err)
-	}
-	if err := grantRuntimeRolePrivileges(ctx, roleTx); err != nil {
-		_ = roleTx.Rollback(ctx)
-		return err
 	}
 	if err := roleTx.Commit(ctx); err != nil {
 		return fmt.Errorf("pgstore: commit runtime role lock tx: %w", err)
@@ -136,6 +140,27 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("pgstore: commit migration %s: %w", name, err)
 		}
+	}
+
+	// Runs AFTER every migration file has been applied -- see this
+	// function's doc comment for why granting before the migration loop
+	// is a real bug (references a table a not-yet-applied migration file
+	// is about to create). Guarded by the same advisory lock as the role-
+	// creation step above (a separate, short transaction) for the same
+	// concurrent-GRANT-races reason documented there.
+	grantTx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("pgstore: begin grant lock tx: %w", err)
+	}
+	defer func() { _ = grantTx.Rollback(ctx) }()
+	if _, err := grantTx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(runtimeRoleAdvisoryLockKey)); err != nil {
+		return fmt.Errorf("pgstore: acquire grant advisory lock: %w", err)
+	}
+	if err := grantRuntimeRolePrivileges(ctx, grantTx); err != nil {
+		return err
+	}
+	if err := grantTx.Commit(ctx); err != nil {
+		return fmt.Errorf("pgstore: commit grant lock tx: %w", err)
 	}
 
 	return nil

@@ -47,8 +47,8 @@ import (
 	"syscall"
 	"time"
 
-	tenantidentityv1 "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/config"
+	tenantidentityv1 "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/health"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/pgtenant"

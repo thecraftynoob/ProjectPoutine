@@ -59,10 +59,6 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("pgconfig: create task_router_schema_migrations: %w", err)
 	}
 
-	if err := grantRuntimeRolePrivileges(ctx, pool); err != nil {
-		return err
-	}
-
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
 		return fmt.Errorf("pgconfig: read migrations dir: %w", err)
@@ -107,6 +103,20 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if err := tx.Commit(ctx); err != nil {
 			return fmt.Errorf("pgconfig: commit migration %s: %w", name, err)
 		}
+	}
+
+	// Runs AFTER every migration file has been applied, not before: the
+	// GRANT statement below names every one of this service's own tables,
+	// including ones a not-yet-applied migration file might still be about
+	// to create (a real bug on a genuinely fresh database, found when
+	// migrations/004_disposition_registry.sql was added on 2026-09-14 --
+	// see GAPS.md's "Closed gaps" section). Granting before the migration
+	// loop only ever appeared to work because every table this GRANT
+	// referenced already existed from a PRIOR deploy by the time a new
+	// migration file was added; a fresh database applying every migration
+	// from scratch would fail on the very first GRANT.
+	if err := grantRuntimeRolePrivileges(ctx, pool); err != nil {
+		return err
 	}
 
 	return nil

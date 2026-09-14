@@ -3,8 +3,8 @@ package relay
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"io"
+	"log/slog"
 	"testing"
 	"time"
 
