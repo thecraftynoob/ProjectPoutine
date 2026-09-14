@@ -25,6 +25,44 @@ spec:
           env:
             - name: HISTORICAL_REPORTING_GRPC_PORT
               value: "50057"
+            - name: NATS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: NATS_URL
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-infra-secret
+                  key: POSTGRES_PASSWORD
+            # POSTGRES_DSN is what services/historical-reporting/cmd/main.go
+            # actually reads (env:"POSTGRES_DSN,required"); composed here
+            # via Kubernetes' $(VAR) env-var interpolation from the
+            # discrete parts above, matching task-router's/tenant-identity's
+            # deployment.yaml pattern exactly rather than duplicating the
+            # whole DSN as its own ConfigMap entry.
+            - name: POSTGRES_DSN
+              value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
             # JWT_PUBLIC_KEY_PATH: see the tenant-identity-public-key
             # ConfigMap volume/volumeMount below -- required for
             # pkg/tenantctx's interceptor to verify any caller's bearer

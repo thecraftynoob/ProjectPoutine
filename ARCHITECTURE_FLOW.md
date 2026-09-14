@@ -5,13 +5,16 @@ service, API endpoint, WebSocket gateway, or Pub/Sub event is created,
 changed, or removed, update this file in the same change. Do not let it
 drift from the code.
 
-**Last updated:** 2026-09-14 (Digital Channels Gateway's first real
-milestone built: inbound `POST /webhooks/chat/{tenant_id}` webhook,
-normalizing one generic chat message shape into a Task Router
-`EnqueueTask` call via `pkg/svcauth`. Previously: 2026-09-13, API Gateway
-built — REST routing via grpc-gateway fronting Task Router + Tenant &
-Identity, end-user JWT validation, WebSocket ticket + proxying for Agent
-Desktop)
+**Last updated:** 2026-09-14 (Historical Reporting's first real milestone
+built: a durable NATS JetStream consumer materializing Task Router's full
+event catalog into one generic Postgres table, `historical_events` — see
+§2's new subsection below. Ingestion only, no read/query API this pass.
+Previously, same day: Digital Channels Gateway's first real milestone
+built: inbound `POST /webhooks/chat/{tenant_id}` webhook, normalizing one
+generic chat message shape into a Task Router `EnqueueTask` call via
+`pkg/svcauth`. Previously: 2026-09-13, API Gateway built — REST routing
+via grpc-gateway fronting Task Router + Tenant & Identity, end-user JWT
+validation, WebSocket ticket + proxying for Agent Desktop)
 
 ---
 
@@ -139,9 +142,80 @@ the cross-replica Redis fan-out below to work correctly; a shared durable
 consumer name would make replicas compete for messages instead of each
 seeing every one).
 
-**Historical Reporting** (`services/historical-reporting`) is the
-documented future consumer of the *full* event catalog for BI/audit
-purposes (architecture doc §2.2) — not yet implemented (still a stub).
+### Subscribed by Historical Reporting (`services/historical-reporting/internal/eventconsumer`)
+
+Unlike Agent & Presence Service's filtered subset above, Historical
+Reporting consumes **the full event catalog, all three domains** — every
+row in the table at the top of this section, task/agent/reservation
+alike — for BI/SLA/compliance reporting (architecture doc §2.2). This is
+by design: Agent Presence exists to relay a narrow, real-time-client-
+relevant slice; Historical Reporting exists to durably materialize
+everything, since a future reporting/analytics read path can't know in
+advance which historical event types it'll need to query.
+
+Mechanically the opposite of Agent Presence's approach in every way that
+matters:
+
+- **One durable, named JetStream consumer** (`pkg/eventbus.Client.Subscribe`,
+  NOT `SubscribeEphemeral`) — durable consumer name
+  `historical-reporting-ingest`, fixed and stable across restarts, since
+  JetStream tracks delivery position server-side keyed by that name. This
+  is the correct choice (not ephemeral) because Historical Reporting is a
+  single-replica, stateful-ingestion service that must resume from
+  exactly where it left off after a restart and never silently drop an
+  event — the opposite requirement from Agent Presence's multi-replica
+  fan-out, which needs every replica to independently see every event
+  rather than compete for a shared position.
+- **One subscribe call covers all three domains** via a single wildcard
+  `FilterSubject` of `tenant.*.>` on the `TASK_ROUTER_EVENTS` stream,
+  rather than three separate per-domain `Subscribe` calls — confirmed
+  working (JetStream consumer `FilterSubject` supports the same wildcard
+  syntax as stream subjects) by
+  `services/historical-reporting/internal/eventconsumer/consumer_test.go`'s
+  `TestConsumer_ReceivesAllThreeDomainsOnOneSubscribeCall`, which publishes
+  one event per domain against a real in-process JetStream server and
+  asserts a single `Consumer.Start` call ingests all three.
+- **Defensive `EnsureStream`:** Historical Reporting calls
+  `EnsureStream(TASK_ROUTER_EVENTS, ...)` itself at startup, using its own
+  local copy of Task Router's subject list (see below), rather than
+  assuming Task Router has already run first — `CreateOrUpdateStream` is
+  idempotent, so this is safe to call redundantly from multiple services
+  and removes any startup-order dependency between the two services.
+- **No cross-service Go import.** `services/historical-reporting/internal/eventconsumer`
+  does NOT import `services/task-router/internal/events` — both because
+  Go's internal-package visibility forbids it (a different service's
+  `internal/` tree) and because CLAUDE.md Rule 3 forbids the
+  implementation coupling that would represent even if Go allowed it.
+  Instead, `eventconsumer` defines its own local copies of the
+  `TASK_ROUTER_EVENTS` stream name and the three domain subject patterns,
+  documented as reproducing Task Router's public NATS contract (the
+  subject-naming convention itself, not Task Router's Go types) — see
+  that package's doc comment for the full reasoning.
+- **Every event materializes into ONE generic table**,
+  `historical_events` (`tenant_id`, `domain`, `event_type`, `subject`,
+  `payload` JSONB, `received_at`, plus a fresh server-generated
+  `event_id`) — no per-event-type schema, no read/query API yet (this
+  milestone is ingestion-only; verification is direct SQL, not an RPC).
+  See `services/historical-reporting/internal/pgstore`'s package doc
+  comment and §5 below for table ownership.
+
+**Known, documented gap — at-least-once delivery, no idempotency key:**
+`event_id` is generated fresh at ingestion time, NOT derived from the
+inbound NATS message, because Task Router's published `structpb.Struct`
+payloads carry no stable application-level event ID of their own (see
+`services/task-router/internal/events/events.go` — none of its 11
+publisher methods include one). JetStream's `AckExplicitPolicy` guarantees
+at-least-once delivery, not exactly-once: a crash after this service
+inserts a row but before it acks the message will cause JetStream to
+redeliver that message on reconnect, which — with no idempotency key to
+dedupe against — inserts a second, distinct `event_id` row for what was
+really one event. This is an accepted, explicitly documented milestone-
+scope gap, not a silently swallowed one — the same tone/rigor as
+`services/api-gateway/internal/wsticket`'s short-TTL-not-single-use
+tradeoff. See `internal/eventconsumer`'s package doc comment for the full
+write-up and what a future fix would need (either a stable event ID added
+on the publish side, or a dedupe key derived from something already on
+the wire, e.g. the JetStream message sequence number).
 
 ---
 
@@ -277,6 +351,7 @@ the enforced boundary:
 | **Task Router** | `task_router_queues`, `task_router_statuses`, `task_router_attributes` (`services/task-router/internal/pgconfig/migrations/`) |
 | **Tenant & Identity Management** | `tenants`, `tenant_identity_users`, the signing-keypair table (`services/tenant-identity/internal/pgstore/migrations/`) |
 | **Background Worker Pool** | `background_jobs` (`pkg/pgqueue` — shared schema pattern, not yet consumed by a real job type) |
+| **Historical Reporting** | `historical_events` (`services/historical-reporting/internal/pgstore/migrations/`) — the single generic ingestion table for the full NATS event catalog (see §2's "Subscribed by Historical Reporting" above). Tracking table `historical_reporting_schema_migrations` (own migration runner, same unique-per-service-name pattern as every other service's). No RLS on `historical_events` — like `background_jobs` above, it's a system-level ingestion table with no in-service tenant-scoped query path yet, not a per-tenant CRUD resource; see `internal/pgstore`'s package doc comment. |
 
 No service queries another service's tables directly. Cross-service data
 needs go through that service's gRPC API or a published event — never a

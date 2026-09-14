@@ -9,6 +9,15 @@ real-time path of any other service (architecture doc Section 2.2).
 (PostgreSQL with partitioned tables initially; ClickHouse documented as a
 future upgrade path).
 
-**Status:** scaffold only. gRPC server with health check and tenant-context
-interceptors wired (for operational/admin RPCs); no JetStream consumers or
-Postgres connection yet.
+**Status:** first real milestone built — ingestion only. A durable NATS
+JetStream consumer (`internal/eventconsumer`, durable consumer name
+`historical-reporting-ingest`, single `FilterSubject` of `tenant.*.>`
+covering all three of Task Router's domains) materializes the full event
+catalog into one generic Postgres table, `historical_events`
+(`internal/pgstore`). No read/query API, no new RPC, no REST route this
+pass — verification is direct SQL (see `ARCHITECTURE_FLOW.md`'s
+"Subscribed by Historical Reporting" section for the full design
+writeup, including the documented at-least-once/no-idempotency-key
+tradeoff). The gRPC server with health check and tenant-context
+interceptors is unchanged from the scaffold, still running alongside for
+K8s liveness/readiness probes.

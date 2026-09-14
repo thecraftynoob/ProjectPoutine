@@ -4,12 +4,14 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-14 (Digital Channels Gateway's first real
-milestone built — see "Digital Channels Gateway" row below and
-`ARCHITECTURE_FLOW.md` §4.2. Previous entries: full-repo review + cleanup
-pass — see "Cleanup pass" note below; Task Router's `Agent` gained an
-optional `user_id` field; API Gateway built — REST routing, JWT
-validation, WebSocket ticket + proxying)
+**Last updated:** 2026-09-14 (Historical Reporting's first real milestone
+built — see "Historical Reporting" row below and `ARCHITECTURE_FLOW.md`
+§2's "Subscribed by Historical Reporting" subsection. Previous entries,
+same day: Digital Channels Gateway's first real milestone built — see
+`ARCHITECTURE_FLOW.md` §4.2. Earlier: full-repo review + cleanup pass —
+see "Cleanup pass" note below; Task Router's `Agent` gained an optional
+`user_id` field; API Gateway built — REST routing, JWT validation,
+WebSocket ticket + proxying)
 
 **Cleanup pass (2026-09-13):** A full independent audit of every service,
 `/pkg`, K8s manifests, and all four living docs found no functional bugs
@@ -33,7 +35,7 @@ No behavior changes to any RPC, event, or auth flow.
 
 ## 1. Where things stand
 
-### Services with real domain logic (5 of 9)
+### Services with real domain logic (6 of 9)
 
 | Service | Status | Notes |
 |---|---|---|
@@ -42,11 +44,11 @@ No behavior changes to any RPC, event, or auth flow.
 | **Tenant & Identity Management** | Done, deployed | Tenant CRUD, bcrypt login, RBAC roles, ES256 JWT issuance, plus a new `IssueServiceToken` RPC for service-to-service auth. `pkg/jwtauth` is now wired into every service. Keypair persisted in Postgres, generated once. Now also fronted by API Gateway's REST surface. |
 | **API Gateway** | Done, deployed | Single external entry point: REST routing (via `grpc-gateway`, `google.api.http` annotations added directly to Task Router's and Tenant & Identity's existing RPCs) fronting both services, end-user JWT validation (Layer 1, forwarded to backends for Layer 2 re-verification), and WebSocket upgrade proxying to Agent Presence for browser Agent Desktop clients via a short-lived ws-ticket mechanism (API Gateway holds its own dedicated, in-memory-only signing keypair for tickets — separate from Tenant & Identity's session key). Full REST route table: `ARCHITECTURE_FLOW.md` §1.1. TLS termination, rate limiting, quota enforcement, feature-flagging, and `ingress-nginx` external exposure remain explicitly deferred (architecture doc §1.1/§1.4) — this pass is JWT validation + routing + WS proxying only. |
 | **Digital Channels Gateway** | First real milestone done | Inbound-only: `POST /webhooks/chat/{tenant_id}` (direct, NOT via API Gateway — a different trust boundary, see `ARCHITECTURE_FLOW.md` §4.2) accepts one generic chat message shape and calls Task Router's `EnqueueTask` as a service via `pkg/svcauth`, ending at a created Task. No outbound/agent-reply delivery, no Postgres persistence of messages (explicitly deferred to future async workers per architecture doc §2.2), no webhook signature verification (explicitly deferred, documented tradeoff — see `internal/webhookapi`'s `ServeHTTP` doc comment), no real per-provider integration. The scaffold's gRPC health server is unchanged and still runs alongside. |
+| **Historical Reporting** | First real milestone done | Ingestion only: one durable, fixed-name JetStream consumer (`historical-reporting-ingest`, `internal/eventconsumer`) subscribes to Task Router's FULL event catalog (all three domains — task/agent/reservation) via a single wildcard `FilterSubject` (`tenant.*.>`), and materializes every event into one generic Postgres table, `historical_events` (`internal/pgstore`) — `event_id`, `tenant_id`, `domain`, `event_type`, `subject`, `payload` JSONB, `received_at`. No read/query API, no new RPC, no REST route this pass — verification is direct SQL, proven via a live smoke test including a stop/publish-while-down/restart cycle confirming the durable consumer resumes and catches up on missed events rather than dropping them. Known, documented gap: `event_id` is generated fresh at ingestion (Task Router's published payloads carry no stable app-level event ID to reuse), so at-least-once JetStream delivery + a crash between insert and ack can double-insert a redelivered message — accepted milestone-scope gap, not silently swallowed. See `ARCHITECTURE_FLOW.md` §2's "Subscribed by Historical Reporting" subsection for the full design writeup. |
 
-### Stub services (4 of 9) — build/health-check only, no domain logic
+### Stub services (3 of 9) — build/health-check only, no domain logic
 
-Voice/SIP Media Gateway, Workflow/IVR, Historical Reporting, Background
-Worker Pool.
+Voice/SIP Media Gateway, Workflow/IVR, Background Worker Pool.
 
 ### Shared platform plumbing (`/pkg`)
 
@@ -140,14 +142,33 @@ calling another service's gRPC API on its own behalf).
    operator-provisioned tenant set, but worth an LRU/TTL policy before
    fielding many tenants.
 
+### Historical Reporting follow-ups (small, but real)
+
+9a. **No read/query API yet.** This milestone is ingestion-only by
+    explicit scope — `historical_events` has no RPC, no REST route; the
+    only way to read it today is direct SQL. A future milestone should
+    add a query surface (likely a new gRPC service + REST routes via API
+    Gateway) once real reporting requirements (dashboards, SLA rollups,
+    compliance exports) are clearer.
+9b. **No idempotency/deduplication.** `event_id` is generated fresh at
+    ingestion time; a crash between insert and ack can double-insert a
+    redelivered message. See `internal/eventconsumer`'s package doc
+    comment and `ARCHITECTURE_FLOW.md` §2 for the full tradeoff. Needs
+    either a stable event ID added on Task Router's publish side (a
+    cross-service change, out of scope for this milestone) or a dedupe
+    key derived from the JetStream message sequence number.
+9c. **No partitioning, no ClickHouse.** `historical_events` is a single
+    unpartitioned table — correct scope for this first milestone per the
+    architecture doc, but won't scale indefinitely; partitioned tables
+    and/or a ClickHouse migration are the documented future upgrade path
+    (architecture doc §2.2/§3.1).
+
 ### Next service to build (pick one — see recommendation below)
 
 9. **Voice/SIP Media Gateway** — the other channel-ingestion path Digital
    Channels Gateway's build didn't cover. See "Voice merge" below for its
    own open prerequisites.
-10. **Historical Reporting** — durable NATS JetStream consumer materializing
-    the full event catalog into query-optimized Postgres storage.
-11. **Background Worker Pool** — first real job type + `pgqueue.Poller`
+10. **Background Worker Pool** — first real job type + `pgqueue.Poller`
     wiring (e.g. post-call wrap-up sync, webhook delivery).
 
 ### API Gateway follow-ups (small, but real — see `ARCHITECTURE_FLOW.md` §4.1 for the flow these refer to)
@@ -246,20 +267,24 @@ existing schema/pipeline — before any code merge work starts.
 ## 3. Recommended next step
 
 **Build Voice/SIP Media Gateway next, or harden Digital Channels
-Gateway's webhook (signature verification, outbound delivery).**
+Gateway's webhook (signature verification, outbound delivery), or close
+Background Worker Pool's still-open "stub" status.**
 
-Reasoning: Digital Channels Gateway's first milestone is done — Task
-Router now receives real inbound traffic (one generic chat webhook shape)
-instead of only synthetic, test-driven tasks, ending the "API Gateway is
-done but nothing feeds Task Router real work" gap the previous version of
-this section flagged. Two reasonable next directions: (a) the other
-channel-ingestion path, Voice/SIP Media Gateway — see "Voice merge" below
-for its own open prerequisites (Kafka→NATS, tenant_id retrofit,
-language/framework confirmation), worth resolving in parallel rather than
-gating on them; or (b) close Digital Channels Gateway's own explicitly-
-deferred gaps (webhook signature verification is the highest-priority one
-— see To-Do #4 — since the endpoint is genuinely open/unauthenticated
-today) before extending it to more channels or providers.
+Reasoning: Digital Channels Gateway's and Historical Reporting's first
+milestones are both done — Task Router now receives real inbound traffic
+(one generic chat webhook shape) instead of only synthetic, test-driven
+tasks, and every event it publishes is now durably materialized for
+future reporting, ending the "nothing durably records what already
+happened" gap. Three reasonable next directions: (a) the other channel-
+ingestion path, Voice/SIP Media Gateway — see "Voice merge" below for its
+own open prerequisites (Kafka→NATS, tenant_id retrofit, language/
+framework confirmation), worth resolving in parallel rather than gating
+on them; (b) close Digital Channels Gateway's own explicitly-deferred
+gaps (webhook signature verification is the highest-priority one — see
+To-Do #4 — since the endpoint is genuinely open/unauthenticated today)
+before extending it to more channels or providers; or (c) Background
+Worker Pool, the one remaining stub service with no dependency on the
+Voice merge's open questions.
 
 ---
 
