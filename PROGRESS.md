@@ -4,15 +4,17 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-14 (Background Worker Pool's first real
-milestone built — see "Background Worker Pool" row below and
+**Last updated:** 2026-09-14 (Workflow/IVR Engine's build explicitly
+discussed and deferred — see To-Do #11 and §3's Recommended next step;
+no code changed. Previous entries, same day: Background Worker Pool's
+first real milestone built — see "Background Worker Pool" row below and
 `ARCHITECTURE_FLOW.md` §2's "Subscribed by Background Worker Pool"
 subsection. This closes out the "3 stub services" count to 2 — see
-"Where things stand" below. Previous entries, same day: Historical
-Reporting's first real milestone built — see "Historical Reporting" row
-below and `ARCHITECTURE_FLOW.md` §2's "Subscribed by Historical
-Reporting" subsection. Earlier, same day: Digital Channels Gateway's
-first real milestone built — see `ARCHITECTURE_FLOW.md` §4.2. Earlier:
+"Where things stand" below. Earlier, same day: Historical Reporting's
+first real milestone built — see "Historical Reporting" row below and
+`ARCHITECTURE_FLOW.md` §2's "Subscribed by Historical Reporting"
+subsection. Earlier, same day: Digital Channels Gateway's first real
+milestone built — see `ARCHITECTURE_FLOW.md` §4.2. Earlier:
 full-repo review + cleanup pass — see "Cleanup pass" note below; Task
 Router's `Agent` gained an optional `user_id` field; API Gateway built —
 REST routing, JWT validation, WebSocket ticket + proxying)
@@ -197,6 +199,21 @@ calling another service's gRPC API on its own behalf).
 9. **Voice/SIP Media Gateway** — the other channel-ingestion path Digital
    Channels Gateway's build didn't cover. See "Voice merge" below for its
    own open prerequisites.
+11. **Workflow/IVR Engine — deliberately NOT started (2026-09-14).**
+    Discussed and explicitly deferred, not forgotten: the architecture
+    doc frames this service primarily around voice/DTMF call flows
+    (`Workflow / IVR Engine` row, architecture doc §2.2) — "plays
+    prompts, collects DTMF or NLU intents... before a Task is hard-queued
+    to the Router" — and its stated dependency is Voice/SIP Media
+    Gateway's playback/DTMF control gRPC, which doesn't exist yet (blocked
+    on the Voice merge, see below). A channel-agnostic first slice (run
+    the state-machine core against Digital Channels Gateway's chat path
+    instead of voice) was considered and rejected — it would produce
+    something needing substantial rework once Voice/SIP Media Gateway
+    lands, rather than something that extends cleanly. Correct order:
+    resolve the Voice merge's open prerequisites first, then build
+    Voice/SIP Media Gateway, then Workflow/IVR against a real
+    playback/DTMF contract.
 
 ### API Gateway follow-ups (small, but real — see `ARCHITECTURE_FLOW.md` §4.1 for the flow these refer to)
 
@@ -293,8 +310,9 @@ existing schema/pipeline — before any code merge work starts.
 
 ## 3. Recommended next step
 
-**Build Voice/SIP Media Gateway next, or harden Digital Channels
-Gateway's webhook (signature verification, outbound delivery).**
+**Resolve the Voice merge's open prerequisites, or harden Digital
+Channels Gateway's webhook (signature verification, outbound delivery)
+in the meantime.**
 
 Reasoning: Digital Channels Gateway's, Historical Reporting's, and
 Background Worker Pool's first milestones are all done now — Task Router
@@ -303,14 +321,18 @@ only synthetic, test-driven tasks, every event it publishes is durably
 materialized for future reporting, and every completed task now
 genuinely triggers a real outbound wrap-up sync via the
 Database-as-a-Queue pipeline. Only Voice/SIP Media Gateway and
-Workflow/IVR remain stub services. Two reasonable next directions:
-(a) Voice/SIP Media Gateway — see "Voice merge" below for its own open
-prerequisites (Kafka→NATS, tenant_id retrofit, language/framework
-confirmation), worth resolving in parallel rather than gating on them; or
-(b) close Digital Channels Gateway's own explicitly-deferred gaps
-(webhook signature verification is the highest-priority one — see To-Do
-#4 — since the endpoint is genuinely open/unauthenticated today) before
-extending it to more channels or providers.
+Workflow/IVR remain stub services, and **both are now effectively gated
+on the same thing**: Workflow/IVR's build was explicitly discussed and
+deferred (2026-09-14, To-Do #11) because its real spec depends on
+Voice/SIP Media Gateway's playback/DTMF contract, which doesn't exist —
+and Voice/SIP Media Gateway itself is blocked on the Voice merge's three
+open questions (Kafka→NATS, tenant_id retrofit, language/framework
+confirmation — see "Voice merge" below). So the actual highest-leverage
+next step is getting those three answers from the friend, not more
+platform code. In the meantime, closing Digital Channels Gateway's own
+explicitly-deferred gaps (webhook signature verification is the
+highest-priority one — see To-Do #4 — since the endpoint is genuinely
+open/unauthenticated today) is real, unblocked work.
 
 ---
 
