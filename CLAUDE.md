@@ -83,6 +83,30 @@ JetStream**, tenant-scoped subjects (`tenant.{tenant_id}.{domain}.{event}`).
 
 ---
 
+## 4. Known Gaps Tracking (Mandatory)
+
+**Rule:** Every deliberate shortcut, stand-in, or simplification taken to
+keep this a buildable proof-of-concept — not a bug, a conscious scope
+decision — must be recorded in `GAPS.md` (created 2026-09-14), not left to
+live only in a doc comment nobody re-reads later.
+
+**Action:** Whenever a milestone introduces a fresh stand-in or
+simplification (a fake/shared secret standing in for real per-entity
+auth, a hardcoded single-tenant value standing in for a real settings
+system, a missing validation, a piece of infrastructure deliberately not
+built), add it to `GAPS.md` in the SAME change — mirrors Rule 1's "update
+the living doc in the same change" discipline. When a gap is later
+closed, move its entry to `GAPS.md`'s "Closed gaps" section with the date
+and a pointer to what replaced it, rather than deleting it.
+
+`PROGRESS.md` tracks *what's built and what's next*; `GAPS.md` tracks
+*what's fake, narrow, or simplified in what's already built*. Before
+starting a milestone that touches an area `GAPS.md` already lists, check
+whether this is the right moment to also close that gap rather than
+compounding it.
+
+---
+
 ## Reference documents
 
 Read these before making structural changes — they are the design source
@@ -92,3 +116,4 @@ of truth this file's rules are derived from:
 - [`TASK_ROUTER_SPECIFICATION.md`](./TASK_ROUTER_SPECIFICATION.md) — Task Router's full domain spec.
 - [`PROGRESS.md`](./PROGRESS.md) — current build status and to-do list. Read this first each session.
 - [`ARCHITECTURE_FLOW.md`](./ARCHITECTURE_FLOW.md) — the living data-flow map this file's Rule 1 requires (create on first use per Rule 1).
+- [`GAPS.md`](./GAPS.md) — the living known-gaps/POC-stand-ins registry this file's Rule 4 requires.

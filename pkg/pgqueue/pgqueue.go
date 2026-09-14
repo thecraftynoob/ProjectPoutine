@@ -82,3 +82,45 @@ func ClaimJobs(ctx context.Context, tx pgx.Tx, limit int) ([]Job, error) {
 	}
 	return jobs, nil
 }
+
+// MarkDone transitions a claimed job to the terminal 'done' status. Generic
+// across every job_type -- see Poller's doc comment: the generic Run/
+// ClaimJobs loop deliberately leaves the terminal-status transition to the
+// caller/handler, since a real handler still needs to decide what counts
+// as success vs. failure for its own job_type. This helper (and
+// MarkFailed below) exist so every handler doesn't hand-roll the same two
+// UPDATE statements -- they are intentionally job-type-agnostic (no
+// payload inspection, no job_type-specific branching), which is what
+// keeps them fit for pkg/pgqueue rather than living in one service's
+// handler code.
+func MarkDone(ctx context.Context, pool *pgxpool.Pool, jobID int64) error {
+	_, err := pool.Exec(ctx, `UPDATE background_jobs SET status = 'done' WHERE id = $1`, jobID)
+	if err != nil {
+		return fmt.Errorf("pgqueue: mark job %d done: %w", jobID, err)
+	}
+	return nil
+}
+
+// MarkFailed transitions a claimed job either back to 'pending' (with
+// run_after pushed out to retryAt, for the caller's own backoff policy) or
+// to the terminal 'failed' status, depending on retry. Callers decide
+// retry themselves (e.g. based on the job's Attempts count against a
+// max-attempts cutoff) -- this helper only performs the resulting
+// Postgres update, it has no opinion on backoff formula or attempt
+// limits, keeping it generic across job types the same way MarkDone is.
+func MarkFailed(ctx context.Context, pool *pgxpool.Pool, jobID int64, retry bool, retryAt time.Time) error {
+	if retry {
+		_, err := pool.Exec(ctx, `
+			UPDATE background_jobs SET status = 'pending', run_after = $2 WHERE id = $1
+		`, jobID, retryAt)
+		if err != nil {
+			return fmt.Errorf("pgqueue: mark job %d pending for retry: %w", jobID, err)
+		}
+		return nil
+	}
+	_, err := pool.Exec(ctx, `UPDATE background_jobs SET status = 'failed' WHERE id = $1`, jobID)
+	if err != nil {
+		return fmt.Errorf("pgqueue: mark job %d failed: %w", jobID, err)
+	}
+	return nil
+}

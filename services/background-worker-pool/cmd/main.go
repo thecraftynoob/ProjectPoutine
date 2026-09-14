@@ -1,37 +1,56 @@
-// Command background-worker-pool is the scaffold entrypoint for the
-// Background Worker Pool service (architecture doc Section 2.2): executes
+// Command background-worker-pool is the entrypoint for the Background
+// Worker Pool service (architecture doc Section 2.2): executes
 // transactional, non-real-time jobs pulled from the Database-as-a-Queue
 // (see /pkg/pgqueue). Stateless; horizontally scaled, coordinated purely
 // via Postgres row locking (FOR UPDATE SKIP LOCKED), not app state.
 //
-// This scaffold starts a gRPC server with the shared tenant-context
-// interceptors and standard health service registered (for liveness/
-// readiness). The actual pgqueue.Poller wiring and job-type handlers are
-// future-milestone domain logic — this binary does not connect to
-// Postgres yet, since a worker with no jobs registered has nothing useful
-// to poll for.
+// This milestone wires the first real end-to-end pipeline: a durable NATS
+// JetStream consumer (internal/wrapupsync.Consumer) turns Task Router's
+// task.completed event into a wrapup_sync background_jobs row, and a
+// pgqueue.Poller claims it and dispatches to internal/wrapupsync.Handler,
+// which does a real outbound HTTP POST to a tenant-configured URL (read
+// from this service's own background_worker_pool_wrapup_targets table --
+// a documented stand-in for real tenant settings, see GAPS.md) and marks
+// the job done/failed(-with-retry) accordingly.
+//
+// The scaffold's gRPC server (health check + tenant-context interceptors)
+// is kept exactly as before, alongside the new pipeline -- still useful
+// for K8s liveness/readiness probes even though this service has no
+// domain RPCs of its own.
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc"
 
 	"github.com/thecraftynoob/ProjectPoutine/pkg/config"
+	"github.com/thecraftynoob/ProjectPoutine/pkg/eventbus"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/health"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/jwtauth"
+	"github.com/thecraftynoob/ProjectPoutine/pkg/pgqueue"
 	"github.com/thecraftynoob/ProjectPoutine/pkg/tenantctx"
-	"google.golang.org/grpc"
+	"github.com/thecraftynoob/ProjectPoutine/services/background-worker-pool/internal/pgstore"
+	"github.com/thecraftynoob/ProjectPoutine/services/background-worker-pool/internal/wrapupsync"
 )
 
 type serviceConfig struct {
 	GRPCPort    string `env:"BACKGROUND_WORKER_POOL_GRPC_PORT" envDefault:"50058"`
-	PostgresDSN string `env:"POSTGRES_DSN"`
+	PostgresDSN string `env:"POSTGRES_DSN,required"`
+	NATSURL     string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
 	// JWTPublicKeyPath points at the PEM-encoded ECDSA public key Tenant &
 	// Identity Management issues tokens with (see
 	// deploy/k8s/tenant-identity-public-key.example.yaml). Required even
-	// for this scaffold: the tenant-context interceptor is wired in for
-	// when real RPCs land, and it fails closed without a verifier.
+	// though this service still has no domain RPCs of its own: the
+	// tenant-context interceptor is wired in for when real RPCs land, and
+	// it fails closed without a verifier.
 	JWTPublicKeyPath string `env:"JWT_PUBLIC_KEY_PATH,required"`
 }
 
@@ -45,12 +64,67 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	verifier, err := jwtauth.LoadVerifierFromFile(cfg.JWTPublicKeyPath)
 	if err != nil {
 		logger.Error("failed to load JWT verifier -- refusing to start without one (fail closed)", slog.Any("error", err))
 		os.Exit(1)
 	}
 
+	// --- Postgres (background_jobs + background_worker_pool_wrapup_targets) ---
+	pgPool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	if err != nil {
+		logger.Error("failed to construct postgres pool", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer pgPool.Close()
+	if err := pgPool.Ping(ctx); err != nil {
+		logger.Error("failed to connect to postgres", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := pgstore.Migrate(ctx, pgPool); err != nil {
+		logger.Error("failed to run postgres migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+	targets := pgstore.NewWrapupTargetStore(pgPool)
+
+	// --- NATS JetStream (durable task.completed ingestion) ---
+	natsClient, err := eventbus.Connect(cfg.NATSURL)
+	if err != nil {
+		logger.Error("failed to connect to nats", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer natsClient.Close()
+
+	consumer := wrapupsync.NewConsumer(natsClient, pgPool, logger)
+	// Defensively ensure the stream exists regardless of Task Router's
+	// startup order relative to this service -- see
+	// wrapupsync.Consumer.EnsureStream's doc comment (CreateOrUpdateStream
+	// is idempotent and safe to call redundantly from multiple services).
+	if err := consumer.EnsureStream(ctx); err != nil {
+		logger.Error("failed to ensure event stream", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := consumer.Start(ctx); err != nil {
+		logger.Error("failed to start durable event consumer", slog.Any("error", err))
+		os.Exit(1)
+	}
+	logger.Info("durable task.completed consumer started")
+
+	// --- pgqueue.Poller (claims wrapup_sync jobs and dispatches to Handler) ---
+	handler := wrapupsync.NewHandler(pgPool, targets, logger)
+	poller := &pgqueue.Poller{Pool: pgPool, Logger: logger}
+	go func() {
+		if err := poller.Run(ctx, handler.HandleJob); err != nil && ctx.Err() == nil {
+			logger.Error("poller stopped unexpectedly", slog.Any("error", err))
+		}
+	}()
+	logger.Info("background job poller started")
+
+	// --- gRPC server: health check only, no domain RPCs this milestone
+	// (see package doc comment) ---
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		logger.Error("failed to listen", slog.Any("error", err))
@@ -63,9 +137,36 @@ func main() {
 	)
 	health.Register(server)
 
-	logger.Info("starting background-worker-pool", slog.String("grpc_port", cfg.GRPCPort))
-	if err := server.Serve(lis); err != nil {
-		logger.Error("server stopped", slog.Any("error", err))
-		os.Exit(1)
+	serveErr := make(chan error, 1)
+	go func() {
+		logger.Info("starting background-worker-pool", slog.String("grpc_port", cfg.GRPCPort))
+		serveErr <- server.Serve(lis)
+	}()
+
+	select {
+	case err := <-serveErr:
+		if err != nil {
+			logger.Error("server stopped", slog.Any("error", err))
+			os.Exit(1)
+		}
+	case <-ctx.Done():
+		logger.Info("shutdown signal received, stopping event consumption and job polling")
+		// ctx.Done() firing already signals wrapupsync's Subscribe loop
+		// (via pkg/eventbus.consume's own goroutine watching this same
+		// ctx) and the Poller's Run loop to stop -- nothing further to do
+		// here to halt either before the deferred natsClient.Close()/
+		// pgPool.Close() run.
+		stopped := make(chan struct{})
+		go func() {
+			server.GracefulStop()
+			close(stopped)
+		}()
+		select {
+		case <-stopped:
+			logger.Info("graceful shutdown complete")
+		case <-time.After(20 * time.Second):
+			logger.Warn("graceful shutdown timed out, forcing stop")
+			server.Stop()
+		}
 	}
 }

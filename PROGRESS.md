@@ -4,14 +4,18 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-14 (Historical Reporting's first real milestone
-built — see "Historical Reporting" row below and `ARCHITECTURE_FLOW.md`
-§2's "Subscribed by Historical Reporting" subsection. Previous entries,
-same day: Digital Channels Gateway's first real milestone built — see
-`ARCHITECTURE_FLOW.md` §4.2. Earlier: full-repo review + cleanup pass —
-see "Cleanup pass" note below; Task Router's `Agent` gained an optional
-`user_id` field; API Gateway built — REST routing, JWT validation,
-WebSocket ticket + proxying)
+**Last updated:** 2026-09-14 (Background Worker Pool's first real
+milestone built — see "Background Worker Pool" row below and
+`ARCHITECTURE_FLOW.md` §2's "Subscribed by Background Worker Pool"
+subsection. This closes out the "3 stub services" count to 2 — see
+"Where things stand" below. Previous entries, same day: Historical
+Reporting's first real milestone built — see "Historical Reporting" row
+below and `ARCHITECTURE_FLOW.md` §2's "Subscribed by Historical
+Reporting" subsection. Earlier, same day: Digital Channels Gateway's
+first real milestone built — see `ARCHITECTURE_FLOW.md` §4.2. Earlier:
+full-repo review + cleanup pass — see "Cleanup pass" note below; Task
+Router's `Agent` gained an optional `user_id` field; API Gateway built —
+REST routing, JWT validation, WebSocket ticket + proxying)
 
 **Cleanup pass (2026-09-13):** A full independent audit of every service,
 `/pkg`, K8s manifests, and all four living docs found no functional bugs
@@ -35,7 +39,7 @@ No behavior changes to any RPC, event, or auth flow.
 
 ## 1. Where things stand
 
-### Services with real domain logic (6 of 9)
+### Services with real domain logic (7 of 9)
 
 | Service | Status | Notes |
 |---|---|---|
@@ -45,10 +49,11 @@ No behavior changes to any RPC, event, or auth flow.
 | **API Gateway** | Done, deployed | Single external entry point: REST routing (via `grpc-gateway`, `google.api.http` annotations added directly to Task Router's and Tenant & Identity's existing RPCs) fronting both services, end-user JWT validation (Layer 1, forwarded to backends for Layer 2 re-verification), and WebSocket upgrade proxying to Agent Presence for browser Agent Desktop clients via a short-lived ws-ticket mechanism (API Gateway holds its own dedicated, in-memory-only signing keypair for tickets — separate from Tenant & Identity's session key). Full REST route table: `ARCHITECTURE_FLOW.md` §1.1. TLS termination, rate limiting, quota enforcement, feature-flagging, and `ingress-nginx` external exposure remain explicitly deferred (architecture doc §1.1/§1.4) — this pass is JWT validation + routing + WS proxying only. |
 | **Digital Channels Gateway** | First real milestone done | Inbound-only: `POST /webhooks/chat/{tenant_id}` (direct, NOT via API Gateway — a different trust boundary, see `ARCHITECTURE_FLOW.md` §4.2) accepts one generic chat message shape and calls Task Router's `EnqueueTask` as a service via `pkg/svcauth`, ending at a created Task. No outbound/agent-reply delivery, no Postgres persistence of messages (explicitly deferred to future async workers per architecture doc §2.2), no webhook signature verification (explicitly deferred, documented tradeoff — see `internal/webhookapi`'s `ServeHTTP` doc comment), no real per-provider integration. The scaffold's gRPC health server is unchanged and still runs alongside. |
 | **Historical Reporting** | First real milestone done | Ingestion only: one durable, fixed-name JetStream consumer (`historical-reporting-ingest`, `internal/eventconsumer`) subscribes to Task Router's FULL event catalog (all three domains — task/agent/reservation) via a single wildcard `FilterSubject` (`tenant.*.>`), and materializes every event into one generic Postgres table, `historical_events` (`internal/pgstore`) — `event_id`, `tenant_id`, `domain`, `event_type`, `subject`, `payload` JSONB, `received_at`. No read/query API, no new RPC, no REST route this pass — verification is direct SQL, proven via a live smoke test including a stop/publish-while-down/restart cycle confirming the durable consumer resumes and catches up on missed events rather than dropping them. Known, documented gap: `event_id` is generated fresh at ingestion (Task Router's published payloads carry no stable app-level event ID to reuse), so at-least-once JetStream delivery + a crash between insert and ack can double-insert a redelivered message — accepted milestone-scope gap, not silently swallowed. See `ARCHITECTURE_FLOW.md` §2's "Subscribed by Historical Reporting" subsection for the full design writeup. |
+| **Background Worker Pool** | First real milestone done | End-to-end pipeline: a durable, fixed-name JetStream consumer (`background-worker-pool-wrapup`, `internal/wrapupsync.Consumer`) subscribes ONLY to `tenant.*.task.completed` (not Historical Reporting's full-catalog wildcard), enqueuing a `wrapup_sync` row into `background_jobs` (the Database-as-a-Queue table from `pkg/pgqueue`, now actually run/owned for the first time — see migration-ownership note below). A `pkg/pgqueue.Poller` claims pending jobs and dispatches to `internal/wrapupsync.Handler`, which looks up a tenant's configured wrap-up target URL (new `background_worker_pool_wrapup_targets` table — GAPS.md's pre-existing "Instance: Background Worker Pool's wrap-up sync target URL" entry) and does a real `net/http` POST of `{taskId, agentId, tenantId}` as JSON, marking the job `'done'` on 2xx or scheduling a backed-off retry (`run_after = now + attempts*30s`, capped at 5 min, up to `maxAttempts = 5` before permanent `'failed'` — both documented in GAPS.md as real scope decisions). New generic `pkg/pgqueue.MarkDone`/`MarkFailed` helpers added (Poller's own doc comment explicitly left the terminal-status transition to the caller). **Migration-ownership decision:** `pkg/pgqueue/migrations/001_background_jobs.sql` existed but nothing ran it — Go's `go:embed` can't cross a package boundary, so Background Worker Pool now owns its own copy under `services/background-worker-pool/internal/pgstore/migrations/`, matching every other service's own-migrations convention (CLAUDE.md Rule 3); the `pkg/pgqueue` copy is left as reference documentation only. Verified via a full live smoke test (real tenant/agent/task through `EnqueueTask`→match→`AcceptReservation`→`CompleteTask`, confirming a real HTTP POST lands on a local test server and the job reaches `'done'` in Postgres) covering both the success path and a genuinely-unreachable-URL failure path (confirmed retry-with-backoff engages). See `ARCHITECTURE_FLOW.md` §2's "Subscribed by Background Worker Pool" subsection and §5's updated table-ownership row for the full design writeup. |
 
-### Stub services (3 of 9) — build/health-check only, no domain logic
+### Stub services (2 of 9) — build/health-check only, no domain logic
 
-Voice/SIP Media Gateway, Workflow/IVR, Background Worker Pool.
+Voice/SIP Media Gateway, Workflow/IVR.
 
 ### Shared platform plumbing (`/pkg`)
 
@@ -163,13 +168,35 @@ calling another service's gRPC API on its own behalf).
     and/or a ClickHouse migration are the documented future upgrade path
     (architecture doc §2.2/§3.1).
 
+### Background Worker Pool follow-ups (small, but real)
+
+10a. **`wrapup_sync` is the only job_type implemented.** `pkg/pgqueue`'s
+     `background_jobs` table and `internal/wrapupsync.Handler`'s
+     dispatch-by-`job_type` structure both support more (e.g.
+     `webhook_delivery`, `billing_rollup` — see `background_jobs`'
+     column comment), but only `wrapup_sync` has a real handler this
+     milestone; any other `job_type` is logged and marked `'failed'`
+     rather than crashing the poller.
+10b. **No idempotency/deduplication on the NATS side.** Same root cause
+     as Historical Reporting's #9b above (no stable event ID on Task
+     Router's published payloads) — a crash between `pgqueue.Enqueue`
+     succeeding and the message being acked can double-enqueue a
+     `wrapup_sync` job. See GAPS.md.
+10c. **Fixed linear backoff + hard max-attempts cutoff, not exponential-
+     with-jitter or unlimited retries.** `run_after = now +
+     attempts*30s`, capped at 5 minutes, `maxAttempts = 5` before
+     permanent `'failed'` — real, documented scope decisions (GAPS.md),
+     not unstated defaults. No alerting/dead-letter handling exists for
+     a permanently-failed job today.
+10d. **No real tenant-settings API for `background_worker_pool_wrapup_targets`.**
+     Direct SQL insert only — see GAPS.md's pre-existing entry for this
+     table.
+
 ### Next service to build (pick one — see recommendation below)
 
 9. **Voice/SIP Media Gateway** — the other channel-ingestion path Digital
    Channels Gateway's build didn't cover. See "Voice merge" below for its
    own open prerequisites.
-10. **Background Worker Pool** — first real job type + `pgqueue.Poller`
-    wiring (e.g. post-call wrap-up sync, webhook delivery).
 
 ### API Gateway follow-ups (small, but real — see `ARCHITECTURE_FLOW.md` §4.1 for the flow these refer to)
 
@@ -267,24 +294,23 @@ existing schema/pipeline — before any code merge work starts.
 ## 3. Recommended next step
 
 **Build Voice/SIP Media Gateway next, or harden Digital Channels
-Gateway's webhook (signature verification, outbound delivery), or close
-Background Worker Pool's still-open "stub" status.**
+Gateway's webhook (signature verification, outbound delivery).**
 
-Reasoning: Digital Channels Gateway's and Historical Reporting's first
-milestones are both done — Task Router now receives real inbound traffic
-(one generic chat webhook shape) instead of only synthetic, test-driven
-tasks, and every event it publishes is now durably materialized for
-future reporting, ending the "nothing durably records what already
-happened" gap. Three reasonable next directions: (a) the other channel-
-ingestion path, Voice/SIP Media Gateway — see "Voice merge" below for its
-own open prerequisites (Kafka→NATS, tenant_id retrofit, language/
-framework confirmation), worth resolving in parallel rather than gating
-on them; (b) close Digital Channels Gateway's own explicitly-deferred
-gaps (webhook signature verification is the highest-priority one — see
-To-Do #4 — since the endpoint is genuinely open/unauthenticated today)
-before extending it to more channels or providers; or (c) Background
-Worker Pool, the one remaining stub service with no dependency on the
-Voice merge's open questions.
+Reasoning: Digital Channels Gateway's, Historical Reporting's, and
+Background Worker Pool's first milestones are all done now — Task Router
+receives real inbound traffic (one generic chat webhook shape) instead of
+only synthetic, test-driven tasks, every event it publishes is durably
+materialized for future reporting, and every completed task now
+genuinely triggers a real outbound wrap-up sync via the
+Database-as-a-Queue pipeline. Only Voice/SIP Media Gateway and
+Workflow/IVR remain stub services. Two reasonable next directions:
+(a) Voice/SIP Media Gateway — see "Voice merge" below for its own open
+prerequisites (Kafka→NATS, tenant_id retrofit, language/framework
+confirmation), worth resolving in parallel rather than gating on them; or
+(b) close Digital Channels Gateway's own explicitly-deferred gaps
+(webhook signature verification is the highest-priority one — see To-Do
+#4 — since the endpoint is genuinely open/unauthenticated today) before
+extending it to more channels or providers.
 
 ---
 

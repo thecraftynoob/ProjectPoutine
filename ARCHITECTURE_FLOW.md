@@ -5,10 +5,16 @@ service, API endpoint, WebSocket gateway, or Pub/Sub event is created,
 changed, or removed, update this file in the same change. Do not let it
 drift from the code.
 
-**Last updated:** 2026-09-14 (Historical Reporting's first real milestone
-built: a durable NATS JetStream consumer materializing Task Router's full
-event catalog into one generic Postgres table, `historical_events` — see
-§2's new subsection below. Ingestion only, no read/query API this pass.
+**Last updated:** 2026-09-14 (Background Worker Pool's first real
+milestone built: a durable NATS JetStream consumer subscribing ONLY to
+`tenant.*.task.completed`, enqueuing a `wrapup_sync` row into
+`background_jobs` (Database-as-a-Queue), which `pkg/pgqueue.Poller`
+claims and a handler POSTs as JSON to a tenant-configured URL — see §2's
+new subsection below and §5's new table-ownership row. Previously, same
+day: Historical Reporting's first real milestone built: a durable NATS
+JetStream consumer materializing Task Router's full event catalog into
+one generic Postgres table, `historical_events` — see §2's other new
+subsection below. Ingestion only, no read/query API this pass.
 Previously, same day: Digital Channels Gateway's first real milestone
 built: inbound `POST /webhooks/chat/{tenant_id}` webhook, normalizing one
 generic chat message shape into a Task Router `EnqueueTask` call via
@@ -217,6 +223,65 @@ write-up and what a future fix would need (either a stable event ID added
 on the publish side, or a dedupe key derived from something already on
 the wire, e.g. the JetStream message sequence number).
 
+### Subscribed by Background Worker Pool (`services/background-worker-pool/internal/wrapupsync`)
+
+Unlike both services above, Background Worker Pool consumes a **single,
+narrow filter** — only `tenant.*.task.completed`, not Historical
+Reporting's full-catalog wildcard and not Agent Presence's filtered
+multi-event subset. This service only cares about one guarantee: "every
+completed task must eventually get a wrap-up job."
+
+- **One durable, named JetStream consumer**
+  (`pkg/eventbus.Client.Subscribe`, NOT `SubscribeEphemeral`) — durable
+  consumer name `background-worker-pool-wrapup`, fixed and stable across
+  restarts. Durable (not ephemeral) for the same reason as Historical
+  Reporting's consumer: this is a real guarantee worth having, not
+  best-effort — confirmed with the user this milestone.
+- **`FilterSubject` = `tenant.*.task.completed`** — deliberately narrower
+  than Historical Reporting's `tenant.*.>`, since this service has no use
+  for agent/reservation events or any other task event.
+- **Defensive `EnsureStream`:** calls `EnsureStream(TASK_ROUTER_EVENTS, ...)`
+  itself at startup with its own local copy of Task Router's subject
+  list, for the same startup-ordering reason as Historical Reporting's
+  consumer (`CreateOrUpdateStream` is idempotent, safe to call
+  redundantly).
+- **No cross-service Go import** — same two reasons as Historical
+  Reporting's consumer (Go internal-package visibility; CLAUDE.md Rule 3).
+  `internal/wrapupsync` defines its own local copies of the stream name
+  and this one subject filter.
+- **On receipt:** parses the subject for `tenant_id`, decodes the
+  `structpb` payload for `taskId`/`agentId` (nullable), and calls
+  `pkg/pgqueue.Enqueue` with `job_type = "wrapup_sync"` and payload
+  `{taskId, agentId, tenantId}`. Acks on successful enqueue, Naks
+  (leaving it for redelivery) on any parse/enqueue failure.
+- **Then the Database-as-a-Queue pipeline takes over:** a
+  `pkg/pgqueue.Poller` (run in `cmd/main.go`) claims pending `wrapup_sync`
+  jobs via `FOR UPDATE SKIP LOCKED` and dispatches to
+  `internal/wrapupsync.Handler`, which looks up the tenant's configured
+  wrap-up target URL (`background_worker_pool_wrapup_targets` — see §5
+  below and GAPS.md) and does a real `net/http` POST of the job payload as
+  JSON, with a 5-second timeout. A 2xx response marks the job `'done'`
+  (via the new `pkg/pgqueue.MarkDone` helper); anything else — non-2xx,
+  timeout, connection failure — schedules a retry (`pkg/pgqueue.MarkFailed`
+  with `retry=true`) with `run_after = now + attempts*30s`, capped at 5
+  minutes, up to `maxAttempts = 5`, after which the job is marked
+  permanently `'failed'`. A tenant with no configured target URL fails the
+  job immediately (not retried — no amount of retrying fixes a missing
+  config row). See GAPS.md for this backoff formula and max-attempts
+  cutoff as documented scope decisions, not oversights.
+- **`pkg/pgqueue.MarkDone`/`MarkFailed`** are new, genuinely generic
+  helpers added to `pkg/pgqueue` itself (not job-type-specific) — the
+  terminal-status transition Poller's own doc comment explicitly leaves to
+  the caller/handler.
+
+**Delivery guarantee / known gap:** the same at-least-once/no-dedupe
+tradeoff as Historical Reporting's consumer (see above) — a crash between
+`pgqueue.Enqueue` succeeding and the message being acked causes JetStream
+to redeliver, producing a second `wrapup_sync` job for the same
+`task.completed` event. Same root cause (no stable event ID on Task
+Router's published payloads), not a new gap this service invents — see
+PROGRESS.md To-Do #9b.
+
 ---
 
 ## 3. Redis — not the event bus, two unrelated per-service uses
@@ -350,12 +415,33 @@ the enforced boundary:
 |---|---|
 | **Task Router** | `task_router_queues`, `task_router_statuses`, `task_router_attributes` (`services/task-router/internal/pgconfig/migrations/`) |
 | **Tenant & Identity Management** | `tenants`, `tenant_identity_users`, the signing-keypair table (`services/tenant-identity/internal/pgstore/migrations/`) |
-| **Background Worker Pool** | `background_jobs` (`pkg/pgqueue` — shared schema pattern, not yet consumed by a real job type) |
+| **Background Worker Pool** | `background_jobs` and `background_worker_pool_wrapup_targets` (`services/background-worker-pool/internal/pgstore/migrations/`) — see below for the migration-ownership decision and the new table. Tracking table `background_worker_pool_schema_migrations` (own migration runner, `pg_advisory_xact_lock`-guarded like Historical Reporting's, same unique-per-service-name pattern). No RLS on either table — same system-level-table reasoning as `historical_events` below. |
 | **Historical Reporting** | `historical_events` (`services/historical-reporting/internal/pgstore/migrations/`) — the single generic ingestion table for the full NATS event catalog (see §2's "Subscribed by Historical Reporting" above). Tracking table `historical_reporting_schema_migrations` (own migration runner, same unique-per-service-name pattern as every other service's). No RLS on `historical_events` — like `background_jobs` above, it's a system-level ingestion table with no in-service tenant-scoped query path yet, not a per-tenant CRUD resource; see `internal/pgstore`'s package doc comment. |
 
 No service queries another service's tables directly. Cross-service data
 needs go through that service's gRPC API or a published event — never a
 shared-table shortcut.
+
+**Migration-ownership decision (Background Worker Pool, 2026-09-14):**
+`pkg/pgqueue/migrations/001_background_jobs.sql` existed before this
+milestone but nothing embedded or ran it — no service owned the table it
+describes. Go's `go:embed` cannot reach across a package boundary (a
+service's `migrate.go` cannot embed a file living under
+`pkg/pgqueue/migrations`), and this repo's established convention (every
+other service embeds and runs its own `migrations/*.sql`, per CLAUDE.md
+Rule 3) rules out a shared embedded FS anyway. Background Worker Pool
+therefore owns its own copy at
+`services/background-worker-pool/internal/pgstore/migrations/001_background_jobs.sql`
+(same columns/index, `IF NOT EXISTS`-guarded — see that file's own doc
+comment for why: `pkg/pgqueue`'s own package-level unit tests also
+provision this same real table name for pkg-level Enqueue/ClaimJobs/
+MarkDone/MarkFailed tests, so both this migration and that test file
+guard with `IF NOT EXISTS` to stay idempotent against each other
+regardless of `go test ./...`'s run order against the shared
+docker-compose Postgres instance). `pkg/pgqueue/migrations/001_background_jobs.sql`
+itself is left in place as reference documentation of the shape the
+`pkg/pgqueue` Go code assumes — nothing embeds or runs it directly
+anymore; see that file's own updated doc comment.
 
 ---
 
