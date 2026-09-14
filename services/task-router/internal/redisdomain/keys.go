@@ -74,8 +74,9 @@ func reservationKey(tenantID, reservationID string) string {
 // resolves any other way, so a stale expiry notification can never fire
 // for an already-resolved reservation (the Lua script's atomic
 // re-validation is still the real safety net — see
-// scripts/expire_reservation.lua — but proactive deletion keeps the
-// keyspace clean and avoids a needless wakeup).
+// scripts/reject_reservation.lua (invoked with reason "expired") — but
+// proactive deletion keeps the keyspace clean and avoids a needless
+// wakeup).
 func reservationExpiryKey(tenantID, reservationID string) string {
 	return fmt.Sprintf("%s:%s:resexp:%s", keyPrefix, tenantID, reservationID)
 }

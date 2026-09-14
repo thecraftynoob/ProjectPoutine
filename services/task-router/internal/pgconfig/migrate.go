@@ -21,19 +21,30 @@ import (
 var migrationsFS embed.FS
 
 // Migrate applies every embedded migration file in filename order, inside
-// a single transaction, tracked via a simple schema_migrations table so
-// re-running on an already-migrated database is a safe no-op. This is a
+// a single transaction, tracked via a task_router_schema_migrations table
+// so re-running on an already-migrated database is a safe no-op. This is a
 // minimal hand-rolled runner (no external migration framework dependency)
 // consistent with this repo's other pkg helpers being small and
 // dependency-light.
+//
+// The tracking table is named task_router_schema_migrations, NOT a bare
+// schema_migrations, deliberately: this service shares one physical
+// Postgres instance with Tenant & Identity Management (CLAUDE.md Rule 3
+// -- "services in this repo already share one Postgres instance... that
+// is intentional"), and a bare schema_migrations name would have both
+// services' independent migration runners silently reading and writing
+// the SAME table, which is exactly the cross-service table access Rule 3
+// forbids ("every table belongs to exactly one service's own
+// migrations"). Each service owning its own uniquely-named tracking
+// table keeps that boundary real, not just nominal.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
+		CREATE TABLE IF NOT EXISTS task_router_schema_migrations (
 			filename   TEXT PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)
 	`); err != nil {
-		return fmt.Errorf("pgconfig: create schema_migrations: %w", err)
+		return fmt.Errorf("pgconfig: create task_router_schema_migrations: %w", err)
 	}
 
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
@@ -52,7 +63,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, name := range names {
 		var alreadyApplied bool
 		if err := pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE filename = $1)`, name,
+			`SELECT EXISTS(SELECT 1 FROM task_router_schema_migrations WHERE filename = $1)`, name,
 		).Scan(&alreadyApplied); err != nil {
 			return fmt.Errorf("pgconfig: check migration %s: %w", name, err)
 		}
@@ -73,7 +84,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("pgconfig: apply migration %s: %w", name, err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (filename) VALUES ($1)`, name); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO task_router_schema_migrations (filename) VALUES ($1)`, name); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("pgconfig: record migration %s: %w", name, err)
 		}

@@ -118,9 +118,12 @@ func (f *Fanout) Subscribe(ctx context.Context, tenantID string) {
 	}()
 }
 
-// deliverIfLocal decodes one fanned-out message and, if this replica
-// holds a connection for the envelope's target agent, writes it to that
-// connection.
+// deliverIfLocal decodes one fanned-out message just far enough to read
+// its target agent_id and, if this replica holds a connection for that
+// agent, writes the ORIGINAL payload bytes straight through unchanged --
+// payload is already the exact JSON Publish sent (json.Marshal(env) in
+// Publish above), so re-marshaling env here would just reproduce the same
+// bytes at the cost of a redundant encode per delivered message.
 func (f *Fanout) deliverIfLocal(tenantID, payload string) {
 	var env Envelope
 	if err := json.Unmarshal([]byte(payload), &env); err != nil {
@@ -133,12 +136,7 @@ func (f *Fanout) deliverIfLocal(tenantID, payload string) {
 		// agent isn't currently connected anywhere) owns this delivery.
 		return
 	}
-	data, err := json.Marshal(env)
-	if err != nil {
-		f.logger.Error("relay: failed to re-marshal envelope for delivery", slog.Any("error", err))
-		return
-	}
-	if err := conn.Send(data); err != nil {
+	if err := conn.Send([]byte(payload)); err != nil {
 		f.logger.Warn("relay: failed to deliver event to local connection",
 			slog.String("tenant_id", tenantID),
 			slog.String("agent_id", env.AgentID),

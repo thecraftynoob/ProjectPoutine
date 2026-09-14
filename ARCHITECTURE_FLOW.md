@@ -107,7 +107,7 @@ exactly (Login, CreateTenant, CreateUser) plus GetTenant/ListTenants
 | `task` | `task.completed` | The task-completion capability is invoked |
 | `agent` | `agent.created` | A new agent is provisioned |
 | `agent` | `agent.status.changed` | Master status updated |
-| `agent` | `agent.capacity_config.updated` | Capacity map replaced or one channel's ready flag toggled |
+| `agent` | `agent.capacity.config.updated` | Capacity map replaced or one channel's ready flag toggled |
 | `agent` | `agent.queues.updated` | Queue memberships replaced |
 | `agent` | `agent.deleted` | Agent removed |
 | `reservation` | `reservation.created` | Matching algorithm commits a match |

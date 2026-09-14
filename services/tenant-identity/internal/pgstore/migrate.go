@@ -20,19 +20,27 @@ import (
 var migrationsFS embed.FS
 
 // Migrate applies every embedded migration file in filename order, inside
-// a single transaction per file, tracked via a schema_migrations table so
-// re-running on an already-migrated database is a safe no-op. Mirrors
+// a single transaction per file, tracked via a
+// tenant_identity_schema_migrations table so re-running on an
+// already-migrated database is a safe no-op. Mirrors
 // services/task-router/internal/pgconfig/migrate.go's pattern exactly --
 // a minimal hand-rolled runner, no external migration framework
 // dependency.
+//
+// The tracking table is named tenant_identity_schema_migrations, NOT a
+// bare schema_migrations -- see that sibling file's doc comment for why:
+// this service shares one physical Postgres instance with Task Router
+// (CLAUDE.md Rule 3), and a bare name would have both services'
+// independent migration runners silently sharing one table, which is
+// exactly the cross-service table access Rule 3 forbids.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
+		CREATE TABLE IF NOT EXISTS tenant_identity_schema_migrations (
 			filename   TEXT PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)
 	`); err != nil {
-		return fmt.Errorf("pgstore: create schema_migrations: %w", err)
+		return fmt.Errorf("pgstore: create tenant_identity_schema_migrations: %w", err)
 	}
 
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
@@ -51,7 +59,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	for _, name := range names {
 		var alreadyApplied bool
 		if err := pool.QueryRow(ctx,
-			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE filename = $1)`, name,
+			`SELECT EXISTS(SELECT 1 FROM tenant_identity_schema_migrations WHERE filename = $1)`, name,
 		).Scan(&alreadyApplied); err != nil {
 			return fmt.Errorf("pgstore: check migration %s: %w", name, err)
 		}
@@ -72,7 +80,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("pgstore: apply migration %s: %w", name, err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations (filename) VALUES ($1)`, name); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO tenant_identity_schema_migrations (filename) VALUES ($1)`, name); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("pgstore: record migration %s: %w", name, err)
 		}

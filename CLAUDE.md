@@ -13,8 +13,9 @@ stop and flag it rather than proceeding silently.
 
 **Action:** Whenever you create, modify, or delete a microservice, API
 endpoint, WebSocket gateway, or Pub/Sub event, immediately update
-`ARCHITECTURE_FLOW.md` (create it if it doesn't exist yet — it does not
-exist as of this rule's adoption, 2026-09-14).
+`ARCHITECTURE_FLOW.md` (create it if it doesn't exist yet — it did not
+exist as of this rule's adoption, 2026-09-13, and was created in the same
+commit as this file).
 
 **Format:** `ARCHITECTURE_FLOW.md` must clearly document service-to-service
 communication, e.g.:

@@ -4,10 +4,28 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-13 (Task Router's `Agent` gained an optional
-`user_id` field — narrows, but doesn't close, the Agent↔User
-reconciliation gap. Previous entry: API Gateway built — REST routing, JWT
+**Last updated:** 2026-09-13 (full-repo review + cleanup pass — see
+"Cleanup pass" note below. Previous entries: Task Router's `Agent` gained
+an optional `user_id` field; API Gateway built — REST routing, JWT
 validation, WebSocket ticket + proxying)
+
+**Cleanup pass (2026-09-13):** A full independent audit of every service,
+`/pkg`, K8s manifests, and all four living docs found no functional bugs
+and reconfirmed all 17 previously-fixed gotchas are still fixed. Fixed
+one real, if latent, Rule 3 violation: `task-router` and `tenant-identity`
+were both creating and sharing a single unnamespaced `schema_migrations`
+bookkeeping table in the shared Postgres instance — harmless only because
+their migration filenames hadn't yet collided. Split into
+`task_router_schema_migrations` / `tenant_identity_schema_migrations`
+(each service's own migrate.go). Also: fixed a doc-drift event name in
+this file's own event catalog (`agent.capacity_config.updated` →
+`agent.capacity.config.updated`, matching `events.go`), corrected
+README.md's stale "3 of 9 services have real logic" status and its
+K8s walkthrough (it omitted the now-required tenant-identity-public-key
+and service-credential apply steps), fixed a stale date in CLAUDE.md, a
+stale Lua-script filename reference, a stale test-file comment, and a
+minor redundant JSON re-marshal in Agent Presence's fanout delivery path.
+No behavior changes to any RPC, event, or auth flow.
 
 ---
 

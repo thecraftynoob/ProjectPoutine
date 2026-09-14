@@ -8,8 +8,8 @@
 -- -- that concept doesn't apply to the registry of tenants itself, which
 -- is inherently platform-level, cross-tenant-by-definition data (the same
 -- way task_router's Queue/Status/Attribute registries are tenant-scoped
--- but this repo's platform migration-tracking table schema_migrations is
--- not tenant data at all).
+-- but this service's own migration-tracking table
+-- tenant_identity_schema_migrations is not tenant data at all).
 CREATE TABLE tenants (
     tenant_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name        TEXT NOT NULL,

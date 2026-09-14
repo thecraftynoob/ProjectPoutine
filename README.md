@@ -16,9 +16,11 @@ structural.
 ## Status
 
 See [`PROGRESS.md`](./PROGRESS.md) for the full, current picture. Short
-version: **Task Router**, **Agent & Presence Service**, and **Tenant &
-Identity Management** have real domain logic; the other 6 services are
-still skeletons that build, start, and respond to gRPC health checks.
+version: **Task Router**, **Agent & Presence Service**, **Tenant &
+Identity Management**, and **API Gateway** (REST routing, JWT validation,
+WebSocket ticket + proxying — the platform's single external entry
+point) have real domain logic; the other 5 services are still skeletons
+that build, start, and respond to gRPC health checks.
 
 All 9 services build into container images and deploy to the `ccaas-dev`
 namespace on Docker Desktop's local Kubernetes — see "Running on
@@ -32,7 +34,9 @@ Kubernetes" below.
   /genproto       generated Go code from /proto (buf generate output)
 /services         one directory per deployable service
   /{name}/cmd     main.go entrypoint
-  /{name}/internal domain logic (empty scaffold today)
+  /{name}/internal domain logic — real for task-router, agent-presence,
+                    tenant-identity, api-gateway (see "Status" above);
+                    empty scaffold for the remaining 5 services
 /deploy/k8s       one manifest set per service, namespace ccaas-dev
 docker-compose.yml  infra only: Postgres 16, Redis 7, NATS (JetStream)
 ```
@@ -76,7 +80,7 @@ see `Makefile`).
 
 ## Makefile targets
 
-`proto-gen`, `build`, `test`, `tidy`, `compose-up`, `compose-down`. Run
+`proto-gen`, `build`, `test`, `vet`, `tidy`, `compose-up`, `compose-down`. Run
 `make <target>` from repo root (or invoke the underlying commands directly
 on Windows without `make` — see the Makefile for the exact commands).
 
@@ -100,6 +104,26 @@ kubectl apply -f deploy/k8s/infra-config.yaml
 # 3. Postgres password secret (copy the example, do not commit your copy)
 copy deploy\k8s\infra-secret.example.yaml deploy\k8s\infra-secret.local.yaml
 kubectl apply -f deploy/k8s/infra-secret.local.yaml
+
+# 3a. Auth config -- REQUIRED before most services will start cleanly.
+# Every service except tenant-identity fails closed (crash-loops) without
+# Tenant & Identity's JWT signing public key; task-router and
+# agent-presence additionally need the shared service-to-service
+# credential for IssueServiceToken. Deploy tenant-identity FIRST, copy its
+# logged public key into the .local.yaml, then apply both:
+copy deploy\k8s\tenant-identity-public-key.example.yaml deploy\k8s\tenant-identity-public-key.local.yaml
+copy deploy\k8s\service-credential.example.yaml deploy\k8s\service-credential.local.yaml
+# (edit tenant-identity-public-key.local.yaml with the real PEM logged by
+# tenant-identity at startup -- see deploy/k8s/README.md for the exact
+# kubectl logs command)
+kubectl apply -f deploy/k8s/tenant-identity-public-key.local.yaml
+kubectl apply -f deploy/k8s/service-credential.local.yaml
+
+# 3b. API Gateway's ws-ticket public key -- optional (only needed for the
+# browser WebSocket ticket path; native/header-auth WebSocket clients
+# work without it). Same manual copy-from-startup-log pattern:
+copy deploy\k8s\api-gateway-ws-ticket-public-key.example.yaml deploy\k8s\api-gateway-ws-ticket-public-key.local.yaml
+kubectl apply -f deploy/k8s/api-gateway-ws-ticket-public-key.local.yaml
 
 # 4. Deploy every service
 kubectl apply -f deploy/k8s/tenant-identity/

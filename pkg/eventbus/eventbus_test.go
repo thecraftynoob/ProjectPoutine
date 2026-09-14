@@ -8,8 +8,9 @@ import (
 
 // Subject() is a pure function, so it's unit-tested here without a live
 // NATS server. Integration tests that exercise Connect/PublishEvent/
-// Subscribe/EnsureStream against a real NATS+JetStream instance belong in
-// a future milestone once docker-compose infra is wired into CI.
+// Subscribe/SubscribeEphemeral/EnsureStream against a real NATS+JetStream
+// instance live in eventbus_integration_test.go (an in-process
+// nats-server, no docker-compose/CI wiring needed).
 func TestSubject(t *testing.T) {
 	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
