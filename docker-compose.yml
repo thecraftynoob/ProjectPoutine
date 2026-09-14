@@ -11,6 +11,29 @@ services:
     container_name: ccaas-postgres
     restart: unless-stopped
     environment:
+      # POSTGRES_USER/POSTGRES_PASSWORD provision the Postgres SUPERUSER
+      # ("ccaas") -- the official postgres:16 image always creates its
+      # POSTGRES_USER as a superuser, that's simply how the image's
+      # bootstrap works. Every service's Migrate() connects as this role
+      # at startup ONLY, to run schema migrations and idempotently
+      # provision/grant a second, non-superuser runtime role
+      # (POSTGRES_RUNTIME_USER below) -- never for ongoing queries.
+      #
+      # There is deliberately no POSTGRES_RUNTIME_PASSWORD/
+      # POSTGRES_RUNTIME_USER entry in THIS environment block: unlike
+      # POSTGRES_USER (which this image's own bootstrap logic consumes to
+      # create the initial superuser), the runtime role is application-
+      # level state created by each service's own Migrate() the first
+      # time any service starts against a fresh database (see e.g.
+      # services/tenant-identity/internal/pgstore/runtime_role.go) --
+      # nothing in this postgres container's own startup needs to know
+      # about it. Services read POSTGRES_RUNTIME_USER/
+      # POSTGRES_RUNTIME_PASSWORD from .env.local (see
+      # .env.local.example) to compose RUNTIME_POSTGRES_DSN, matching the
+      # password Migrate() provisions the role with -- see
+      # services/*/internal/pgstore/runtime_role.go's
+      # defaultRuntimeRolePassword fallback for what these must agree on
+      # if .env.local doesn't set POSTGRES_RUNTIME_PASSWORD explicitly.
       POSTGRES_USER: ${POSTGRES_USER:-ccaas}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ccaas_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-ccaas}

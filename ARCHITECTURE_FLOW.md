@@ -5,7 +5,14 @@ service, API endpoint, WebSocket gateway, or Pub/Sub event is created,
 changed, or removed, update this file in the same change. Do not let it
 drift from the code.
 
-**Last updated:** 2026-09-14 (Background Worker Pool's first real
+**Last updated:** 2026-09-14 (Postgres connection-identity fix: every
+service that touches Postgres now runs its ongoing, steady-state queries
+as a new non-superuser role instead of the superuser every service
+previously connected as unconditionally, which had silently made every
+Row-Level Security policy in this repo a no-op against real traffic —
+this was a genuine bug, not a scope decision; see §5's rewritten Postgres
+section below and `GAPS.md`'s "Closed gaps" section for the full
+writeup). Previously, same day: Background Worker Pool's first real
 milestone built: a durable NATS JetStream consumer subscribing ONLY to
 `tenant.*.task.completed`, enqueuing a `wrapup_sync` row into
 `background_jobs` (Database-as-a-Queue), which `pkg/pgqueue.Poller`
@@ -411,12 +418,80 @@ One shared Postgres instance (`docker-compose.yml` / `deploy/k8s/infra-config.ya
 by design — see `CLAUDE.md` Rule 3. Table ownership, not instance count, is
 the enforced boundary:
 
+### 5.0 Two Postgres connection identities (fixed 2026-09-14)
+
+Every service that touches Postgres (Task Router, Tenant & Identity,
+Historical Reporting, Background Worker Pool) now opens **two** separate
+`*pgxpool.Pool`/`pgtenant.Pool` connections, authenticated as two
+different roles, instead of one:
+
+- **Superuser (`ccaas`, `POSTGRES_DSN`)** — used ONLY to run that
+  service's own `Migrate()` at startup: applying schema migrations, and
+  (new) idempotently provisioning the runtime role below and `GRANT`ing
+  it privileges. `CREATE ROLE`/`GRANT` require superuser or table-owner
+  privilege, so this step legitimately needs the superuser connection.
+  Never used for a service's ongoing, steady-state queries.
+- **Runtime role (`ccaas_app`, `RUNTIME_POSTGRES_DSN`)** — a shared,
+  non-superuser, `NOSUPERUSER NOBYPASSRLS` role every service's REAL,
+  ongoing queries connect as (the pool passed to `pgconfig.NewRegistry`,
+  `pgstore.NewUserStore`, `pgstore.NewStore`, `pgqueue.Poller`, etc.).
+  Idempotently created and granted by each service's own `Migrate()` (see
+  `services/*/internal/pg{store,config}/runtime_role.go`) — no manual
+  operator step, no new shared `pkg`, safe under `go run`, docker-compose,
+  and Kubernetes alike.
+
+**Why this exists (a real bug, not a design choice):** docker-compose's
+and Kubernetes' `postgres:16` bootstrap always creates `POSTGRES_USER`
+("ccaas") as a Postgres **superuser** — that is simply how the official
+image's bootstrap works, not something this repo's config asked for.
+Postgres superusers **unconditionally bypass Row-Level Security**, and
+`ALTER TABLE ... FORCE ROW LEVEL SECURITY` does not change that — FORCE
+only binds the table *owner*, never a superuser. Every service in this
+repo connected as `ccaas` for ALL queries, including steady-state ones,
+since the beginning — which meant every RLS policy this repo ever wrote
+(`tenant_identity_users`, `task_router_queues`/`statuses`/`attributes`)
+was silently a no-op against real traffic, despite being correctly
+written and correctly using `pkg/pgtenant.Pool.WithTenant` to set
+`app.current_tenant` per-transaction. Confirmed live before the fix:
+`IdentityService.ListUsers` returned users from every tenant in the
+table, not just the caller's own. `pkg/pgtenant` itself, and every RLS
+policy's SQL, were always correct — this was purely a connection-
+privilege bug. See `GAPS.md`'s "Closed gaps" section for the full
+writeup and the live cross-tenant-isolation proof that confirmed the fix.
+
+**Scope:** ALL Postgres-touching services switch uniformly, not just the
+two with RLS tables today (Task Router, Tenant & Identity) — Historical
+Reporting's and Background Worker Pool's tables carry no RLS policy today
+but switch too, so a future RLS-protected table never silently inherits
+this same bug again. Services with no Postgres connection at all today
+(Agent & Presence, API Gateway, Voice/SIP Media Gateway, Workflow &
+IVR Orchestrator) needed no change. Digital Channels Gateway declares a
+`POSTGRES_DSN` config field for future parity but never actually
+connects it to anything yet (no `internal/pgstore` package exists for
+this service per its own milestone scope) — also needed no change.
+
+**Password provisioning:** one fixed, shared `ccaas_app` password,
+provisioned via a new `POSTGRES_RUNTIME_PASSWORD` key in the SAME
+`ccaas-infra-secret` K8s Secret that already carries the superuser's
+`POSTGRES_PASSWORD` (see `deploy/k8s/infra-secret.example.yaml`) — every
+service's `runtime_role.go` reads it from the same env var to provision
+the role with a matching password, and every `deployment.yaml` composes
+`RUNTIME_POSTGRES_DSN` from it the same `$(VAR)`-interpolation way
+`POSTGRES_DSN` is already composed. This is a deliberate, documented
+dev/POC-scale simplification, consistent with this repo's existing
+`service-credential.example.yaml` precedent for `SERVICE_SHARED_SECRET`
+— see `GAPS.md`'s "Security & auth" section for the corresponding
+not-yet-closed gap entry.
+
+Table ownership itself is unchanged by this fix — same map as before,
+now with each table's runtime-role grant noted:
+
 | Service | Owns (via its own migrations) |
 |---|---|
-| **Task Router** | `task_router_queues`, `task_router_statuses`, `task_router_attributes` (`services/task-router/internal/pgconfig/migrations/`) |
-| **Tenant & Identity Management** | `tenants`, `tenant_identity_users`, the signing-keypair table (`services/tenant-identity/internal/pgstore/migrations/`) |
-| **Background Worker Pool** | `background_jobs` and `background_worker_pool_wrapup_targets` (`services/background-worker-pool/internal/pgstore/migrations/`) — see below for the migration-ownership decision and the new table. Tracking table `background_worker_pool_schema_migrations` (own migration runner, `pg_advisory_xact_lock`-guarded like Historical Reporting's, same unique-per-service-name pattern). No RLS on either table — same system-level-table reasoning as `historical_events` below. |
-| **Historical Reporting** | `historical_events` (`services/historical-reporting/internal/pgstore/migrations/`) — the single generic ingestion table for the full NATS event catalog (see §2's "Subscribed by Historical Reporting" above). Tracking table `historical_reporting_schema_migrations` (own migration runner, same unique-per-service-name pattern as every other service's). No RLS on `historical_events` — like `background_jobs` above, it's a system-level ingestion table with no in-service tenant-scoped query path yet, not a per-tenant CRUD resource; see `internal/pgstore`'s package doc comment. |
+| **Task Router** | `task_router_queues`, `task_router_statuses`, `task_router_attributes` (`services/task-router/internal/pgconfig/migrations/`), plus its own `task_router_schema_migrations` tracking table. All RLS-protected (`tenant_isolation` policy, `FORCE ROW LEVEL SECURITY`). `ccaas_app` (the runtime role) granted `SELECT, INSERT, UPDATE, DELETE` on all four by `internal/pgconfig/runtime_role.go`, run from `Migrate()`. |
+| **Tenant & Identity Management** | `tenants`, `tenant_identity_users`, the signing-keypair table (`services/tenant-identity/internal/pgstore/migrations/`), plus its own `tenant_identity_schema_migrations` tracking table. Only `tenant_identity_users` is RLS-protected — `tenants`/the signing-keypair table have no `tenant_id` column to scope by. `ccaas_app` granted `SELECT, INSERT, UPDATE, DELETE` on all four by `internal/pgstore/runtime_role.go`, run from `Migrate()` (same grant regardless of RLS, for connection-identity consistency — see §5.0). |
+| **Background Worker Pool** | `background_jobs` and `background_worker_pool_wrapup_targets` (`services/background-worker-pool/internal/pgstore/migrations/`) — see below for the migration-ownership decision and the new table. Tracking table `background_worker_pool_schema_migrations` (own migration runner, `pg_advisory_xact_lock`-guarded like Historical Reporting's, same unique-per-service-name pattern). No RLS on either table — same system-level-table reasoning as `historical_events` below. `ccaas_app` granted `SELECT, INSERT, UPDATE, DELETE` on all three tables by `internal/pgstore/runtime_role.go`, plus `USAGE, SELECT` on `background_jobs_id_seq` (its `BIGSERIAL` primary key's implicit sequence — INSERT relying on the column default needs sequence privilege independently of the table grant). |
+| **Historical Reporting** | `historical_events` (`services/historical-reporting/internal/pgstore/migrations/`) — the single generic ingestion table for the full NATS event catalog (see §2's "Subscribed by Historical Reporting" above). Tracking table `historical_reporting_schema_migrations` (own migration runner, same unique-per-service-name pattern as every other service's). No RLS on `historical_events` — like `background_jobs` above, it's a system-level ingestion table with no in-service tenant-scoped query path yet, not a per-tenant CRUD resource; see `internal/pgstore`'s package doc comment. `ccaas_app` granted `SELECT, INSERT, UPDATE, DELETE` on both tables by `internal/pgstore/runtime_role.go`. |
 
 No service queries another service's tables directly. Cross-service data
 needs go through that service's gRPC API or a published event — never a

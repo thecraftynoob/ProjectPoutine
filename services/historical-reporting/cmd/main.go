@@ -49,9 +49,26 @@ import (
 )
 
 type serviceConfig struct {
-	GRPCPort    string `env:"HISTORICAL_REPORTING_GRPC_PORT" envDefault:"50057"`
+	GRPCPort string `env:"HISTORICAL_REPORTING_GRPC_PORT" envDefault:"50057"`
+	// PostgresDSN authenticates as the Postgres SUPERUSER ("ccaas" by
+	// default -- see deploy/k8s/infra-config.yaml's POSTGRES_USER). Used
+	// ONLY for running pgstore.Migrate at startup (CREATE ROLE/GRANT
+	// require superuser or table-owner privilege) -- never for this
+	// service's ongoing queries. See RuntimePostgresDSN below.
 	PostgresDSN string `env:"POSTGRES_DSN,required"`
-	NATSURL     string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
+	// RuntimePostgresDSN authenticates as pgstore.RuntimeRole, the
+	// shared, non-superuser, NOBYPASSRLS role pgstore.Migrate provisions
+	// (see internal/pgstore/runtime_role.go). This is what backs `store`
+	// below -- this service's actual, ongoing writes into
+	// historical_events. historical_events carries no RLS policy today
+	// (see internal/pgstore's package doc comment), but this service
+	// still switches its runtime connection identity for platform-wide
+	// consistency -- see ARCHITECTURE_FLOW.md §5. Composed the same
+	// $(VAR)-interpolation way POSTGRES_DSN is in
+	// deploy/k8s/historical-reporting/deployment.yaml, from
+	// POSTGRES_RUNTIME_USER/POSTGRES_RUNTIME_PASSWORD.
+	RuntimePostgresDSN string `env:"RUNTIME_POSTGRES_DSN,required"`
+	NATSURL            string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
 	// JWTPublicKeyPath points at the PEM-encoded ECDSA public key Tenant &
 	// Identity Management issues tokens with (see
 	// deploy/k8s/tenant-identity-public-key.example.yaml). Required even
@@ -81,18 +98,39 @@ func main() {
 	}
 
 	// --- Postgres (historical_events ingestion table) ---
-	pgPool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	// migratePool: superuser ("ccaas"), used ONLY to run pgstore.Migrate
+	// (which itself provisions pgstore.RuntimeRole and GRANTs it
+	// privileges -- see internal/pgstore/migrate.go and
+	// runtime_role.go). Never used for this service's ongoing domain
+	// queries -- closed immediately after Migrate returns.
+	migratePool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
-		logger.Error("failed to construct postgres pool", slog.Any("error", err))
+		logger.Error("failed to construct postgres pool for migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := migratePool.Ping(ctx); err != nil {
+		migratePool.Close()
+		logger.Error("failed to connect to postgres", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := pgstore.Migrate(ctx, migratePool); err != nil {
+		migratePool.Close()
+		logger.Error("failed to run postgres migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+	migratePool.Close()
+
+	// pgPool: pgstore.RuntimeRole (non-superuser, NOBYPASSRLS) -- what
+	// `store`'s real, ongoing writes into historical_events connect as.
+	// See RuntimePostgresDSN's field doc comment above.
+	pgPool, err := pgxpool.New(ctx, cfg.RuntimePostgresDSN)
+	if err != nil {
+		logger.Error("failed to construct postgres pool as runtime role", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer pgPool.Close()
 	if err := pgPool.Ping(ctx); err != nil {
-		logger.Error("failed to connect to postgres", slog.Any("error", err))
-		os.Exit(1)
-	}
-	if err := pgstore.Migrate(ctx, pgPool); err != nil {
-		logger.Error("failed to run postgres migrations", slog.Any("error", err))
+		logger.Error("failed to connect to postgres as runtime role", slog.Any("error", err))
 		os.Exit(1)
 	}
 	store := pgstore.NewStore(pgPool)

@@ -45,6 +45,11 @@ spec:
                 configMapKeyRef:
                   name: ccaas-infra-config
                   key: POSTGRES_USER
+            - name: POSTGRES_RUNTIME_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_RUNTIME_USER
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
@@ -55,14 +60,33 @@ spec:
                 secretKeyRef:
                   name: ccaas-infra-secret
                   key: POSTGRES_PASSWORD
-            # POSTGRES_DSN is what services/historical-reporting/cmd/main.go
-            # actually reads (env:"POSTGRES_DSN,required"); composed here
-            # via Kubernetes' $(VAR) env-var interpolation from the
-            # discrete parts above, matching task-router's/tenant-identity's
-            # deployment.yaml pattern exactly rather than duplicating the
-            # whole DSN as its own ConfigMap entry.
+            - name: POSTGRES_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-infra-secret
+                  key: POSTGRES_RUNTIME_PASSWORD
+            # POSTGRES_DSN is the SUPERUSER connection
+            # services/historical-reporting/cmd/main.go reads
+            # (env:"POSTGRES_DSN,required") to run pgstore.Migrate at
+            # startup ONLY (CREATE ROLE/GRANT require superuser or
+            # table-owner privilege) -- composed here via Kubernetes'
+            # $(VAR) env-var interpolation from the discrete parts above,
+            # matching task-router's/tenant-identity's deployment.yaml
+            # pattern exactly rather than duplicating the whole DSN as its
+            # own ConfigMap entry.
             - name: POSTGRES_DSN
               value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
+            # RUNTIME_POSTGRES_DSN is the non-superuser, NOBYPASSRLS
+            # pgstore.RuntimeRole connection
+            # services/historical-reporting/cmd/main.go reads
+            # (env:"RUNTIME_POSTGRES_DSN,required") for this service's
+            # REAL, ongoing writes into historical_events -- see
+            # ARCHITECTURE_FLOW.md §5 and GAPS.md's "Closed gaps" section
+            # for the platform-wide connection-identity fix this is part
+            # of. Composed the same $(VAR) way as POSTGRES_DSN above, just
+            # from the runtime-role parts.
+            - name: RUNTIME_POSTGRES_DSN
+              value: "postgres://$(POSTGRES_RUNTIME_USER):$(POSTGRES_RUNTIME_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
             # JWT_PUBLIC_KEY_PATH: see the tenant-identity-public-key
             # ConfigMap volume/volumeMount below -- required for
             # pkg/tenantctx's interceptor to verify any caller's bearer

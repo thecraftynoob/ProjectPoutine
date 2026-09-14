@@ -33,14 +33,63 @@ var migrationsFS embed.FS
 // (CLAUDE.md Rule 3), and a bare name would have both services'
 // independent migration runners silently sharing one table, which is
 // exactly the cross-service table access Rule 3 forbids.
+//
+// Also idempotently provisions the shared, non-superuser runtime role
+// (see ensureRuntimeRole's doc comment) and grants it exactly the
+// privileges this service's own tables need -- see
+// grantRuntimeRolePrivileges. This must run BEFORE this service's real
+// gRPC-serving pools are opened as that role
+// (services/tenant-identity/cmd/main.go), since a role with no GRANTs yet
+// would fail every query the moment the service started using it.
+//
+// The role-creation/grant step runs inside its own
+// pg_advisory_xact_lock-guarded transaction, unlike the rest of this
+// function's plain pool.Exec calls: this package's own pgstore_test.go
+// AND internal/grpcapi's test package both independently call Migrate
+// against the same live Postgres instance, and `go test ./...` runs
+// different packages' tests concurrently by default. CREATE ROLE ... IF
+// NOT EXISTS is safe under that (see ensureRuntimeRole's doc comment),
+// but two concurrent GRANT statements on the SAME table are not -- both
+// need to update that table's ACL entry in pg_class, and observed in
+// practice (this repo's own `go test ./...` run) as Postgres error
+// XX000 "tuple concurrently updated" when two sessions' GRANTs raced.
+// The advisory lock serializes ensureRuntimeRole+grantRuntimeRolePrivileges
+// across concurrent Migrate callers, mirroring the exact fix
+// services/historical-reporting/internal/pgstore/migrate.go and
+// services/background-worker-pool/internal/pgstore/migrate.go already
+// apply for their schema_migrations table creation (this repo has hit
+// this shape of race more than once). Committed and released before the
+// migration-file loop below runs (which has its own, separate
+// EXISTS-then-INSERT idempotency via tenant_identity_schema_migrations,
+// unaffected by this).
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	if _, err := pool.Exec(ctx, `
+	roleTx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("pgstore: begin runtime role lock tx: %w", err)
+	}
+	if _, err := roleTx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(runtimeRoleAdvisoryLockKey)); err != nil {
+		_ = roleTx.Rollback(ctx)
+		return fmt.Errorf("pgstore: acquire runtime role advisory lock: %w", err)
+	}
+	if err := ensureRuntimeRole(ctx, roleTx); err != nil {
+		_ = roleTx.Rollback(ctx)
+		return err
+	}
+	if _, err := roleTx.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS tenant_identity_schema_migrations (
 			filename   TEXT PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 		)
 	`); err != nil {
+		_ = roleTx.Rollback(ctx)
 		return fmt.Errorf("pgstore: create tenant_identity_schema_migrations: %w", err)
+	}
+	if err := grantRuntimeRolePrivileges(ctx, roleTx); err != nil {
+		_ = roleTx.Rollback(ctx)
+		return err
+	}
+	if err := roleTx.Commit(ctx); err != nil {
+		return fmt.Errorf("pgstore: commit runtime role lock tx: %w", err)
 	}
 
 	entries, err := fs.ReadDir(migrationsFS, "migrations")

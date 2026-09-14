@@ -40,6 +40,11 @@ spec:
                 configMapKeyRef:
                   name: ccaas-infra-config
                   key: POSTGRES_USER
+            - name: POSTGRES_RUNTIME_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: ccaas-infra-config
+                  key: POSTGRES_RUNTIME_USER
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
@@ -50,14 +55,35 @@ spec:
                 secretKeyRef:
                   name: ccaas-infra-secret
                   key: POSTGRES_PASSWORD
-            # POSTGRES_DSN is what services/tenant-identity/cmd/main.go
-            # actually reads (env:"POSTGRES_DSN,required"); composed here
-            # via Kubernetes' $(VAR) env-var interpolation from the
-            # discrete parts above, mirroring task-router's deployment.yaml
-            # exactly rather than duplicating the whole DSN as its own
-            # ConfigMap entry.
+            - name: POSTGRES_RUNTIME_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ccaas-infra-secret
+                  key: POSTGRES_RUNTIME_PASSWORD
+            # POSTGRES_DSN is the SUPERUSER connection
+            # services/tenant-identity/cmd/main.go reads
+            # (env:"POSTGRES_DSN,required") to run pgstore.Migrate at
+            # startup ONLY (CREATE ROLE/GRANT require superuser or
+            # table-owner privilege) -- composed here via Kubernetes'
+            # $(VAR) env-var interpolation from the discrete parts above,
+            # mirroring task-router's deployment.yaml exactly rather than
+            # duplicating the whole DSN as its own ConfigMap entry.
             - name: POSTGRES_DSN
               value: "postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
+            # RUNTIME_POSTGRES_DSN is the non-superuser, NOBYPASSRLS
+            # pgstore.RuntimeRole connection
+            # services/tenant-identity/cmd/main.go reads
+            # (env:"RUNTIME_POSTGRES_DSN,required") for this service's
+            # REAL, ongoing queries, including against the RLS-protected
+            # tenant_identity_users table -- so Row-Level Security is
+            # genuinely enforced instead of silently bypassed by a
+            # superuser connection (confirmed live: ListUsers previously
+            # returned every tenant's users, not just the caller's -- see
+            # ARCHITECTURE_FLOW.md §5 and GAPS.md's "Closed gaps" section
+            # for the full writeup). Composed the same $(VAR) way as
+            # POSTGRES_DSN above, just from the runtime-role parts.
+            - name: RUNTIME_POSTGRES_DSN
+              value: "postgres://$(POSTGRES_RUNTIME_USER):$(POSTGRES_RUNTIME_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable"
             # TENANT_IDENTITY_SERVICE_SHARED_SECRET: the credential
             # IssueServiceToken checks every caller against -- see
             # deploy/k8s/service-credential.example.yaml for the full

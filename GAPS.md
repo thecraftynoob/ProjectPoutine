@@ -66,6 +66,32 @@ buried in a doc comment nobody re-reads.
   restart and needs a manual re-`kubectl apply`. **Real version needs:**
   Postgres-backed persistence, mirroring Tenant & Identity's own signing
   key. Tracked: `PROGRESS.md` To-Do #13.
+- **The Postgres runtime role (`ccaas_app`) uses one fixed, shared
+  password across every service**, provisioned the same way
+  `POSTGRES_PASSWORD` (the superuser's) already is — a new
+  `POSTGRES_RUNTIME_PASSWORD` key in the same `ccaas-infra-secret` K8s
+  Secret, read identically by every service's
+  `internal/pg{store,config}/runtime_role.go` (see
+  `ARCHITECTURE_FLOW.md` §5.0). This is the same class of tradeoff as
+  `SERVICE_SHARED_SECRET` above: "one service in this cluster" identity,
+  not "specifically task-router," and no rotation story. Unlike
+  `SERVICE_SHARED_SECRET` (which authenticates a service AS a caller of
+  one specific RPC), a leaked `ccaas_app` password grants direct
+  `SELECT/INSERT/UPDATE/DELETE` on every RLS-protected table's rows the
+  role's grants cover, gated only by whatever `app.current_tenant` the
+  holder's own queries choose to set — i.e. RLS still applies (this role
+  is genuinely `NOBYPASSRLS`, unlike the superuser it replaces), but
+  there is no per-service boundary preventing, say, a compromised
+  Historical Reporting process from opening a connection as `ccaas_app`
+  and querying Tenant & Identity's tables directly (nothing in Postgres
+  itself stops it — CLAUDE.md Rule 3's per-service table boundary is
+  enforced by convention/code review today, not by distinct Postgres
+  roles per service). **Real version needs:** either a distinct Postgres
+  role per service (each granted only its own tables, closing that gap
+  at the database layer) or a real per-service credential/identity
+  mechanism (mirroring whatever eventually replaces
+  `SERVICE_SHARED_SECRET`, e.g. SPIFFE/SPIRE-issued short-lived Postgres
+  credentials) rather than one long-lived shared password.
 
 ## Identity & data model
 
@@ -158,4 +184,44 @@ buried in a doc comment nobody re-reads.
 
 ## Closed gaps
 
-*(none yet — this section fills in as gaps above get resolved)*
+- **Every service connected to Postgres as a superuser, which silently
+  made every Row-Level Security policy in this repo a no-op against real
+  traffic (closed 2026-09-14).** This was a genuine, unintentional
+  security bug, not a deliberate scope decision — unlike every other
+  entry in this file. `POSTGRES_USER` ("ccaas") is always created as a
+  Postgres **superuser** by the official `postgres:16` bootstrap image
+  (both docker-compose's and Kubernetes' Postgres, per
+  `deploy/k8s/infra-config.yaml`'s `POSTGRES_USER` ConfigMap key), and
+  Postgres superusers unconditionally bypass Row-Level Security —
+  `ALTER TABLE ... FORCE ROW LEVEL SECURITY` does not change this, FORCE
+  only binds the table *owner*, never a superuser. Every service in this
+  repo connected as `ccaas` for ALL queries (not just migrations) since
+  its inception, so `tenant_identity_users`' and
+  `task_router_queues`/`statuses`/`attributes`' `tenant_isolation` RLS
+  policies — correctly written, correctly using
+  `pkg/pgtenant.Pool.WithTenant` to set `app.current_tenant` per
+  transaction from a JWT-derived tenant ID never taken from client input
+  — were silently never actually enforced. Confirmed live before the
+  fix: `IdentityService.ListUsers` returned users from every tenant in
+  the table (62 distinct tenants observed), not just the caller's own,
+  despite the policy and the Go code both being correct. This repo had
+  already fixed the identical issue once before, but only for its own
+  test suite (`services/tenant-identity/internal/pgstore/pgstore_test.go`'s
+  `rlsTestRole`) — that fix never touched the actual running services.
+  **Fix:** every Postgres-touching service (Task Router, Tenant &
+  Identity, Historical Reporting, Background Worker Pool) now opens a
+  SECOND connection pool, authenticated as a new, non-superuser,
+  `NOSUPERUSER NOBYPASSRLS` role (`ccaas_app`), for all of its ongoing,
+  steady-state queries — the superuser connection is now used ONLY to
+  run that service's own `Migrate()` at startup (schema migrations, plus
+  idempotently provisioning `ccaas_app` and `GRANT`ing it privileges on
+  that service's own tables). Applied platform-wide, not just to the two
+  services with RLS tables today, so a future RLS-protected table can
+  never silently inherit this same bug again. See
+  `ARCHITECTURE_FLOW.md` §5.0 for the full design and
+  `services/*/internal/pg{store,config}/runtime_role.go` for the
+  implementation. Verified live end-to-end post-fix: two real tenants
+  created via real RPCs, `ListUsers`/`ListQueues` authenticated as tenant
+  A now return ONLY tenant A's rows, and
+  `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname =
+  'ccaas_app'` returns `f, f`.

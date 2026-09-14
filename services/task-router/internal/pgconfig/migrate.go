@@ -37,7 +37,19 @@ var migrationsFS embed.FS
 // forbids ("every table belongs to exactly one service's own
 // migrations"). Each service owning its own uniquely-named tracking
 // table keeps that boundary real, not just nominal.
+//
+// Also idempotently provisions the shared, non-superuser runtime role
+// (see ensureRuntimeRole's doc comment) and grants it exactly the
+// privileges this service's own tables need -- see grantRuntimeRolePrivileges.
+// This must run BEFORE task-router's real gRPC-serving pool is opened as
+// that role (services/task-router/cmd/main.go), since a role with no
+// GRANTs yet would fail every query the moment the service started using
+// it.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	if err := ensureRuntimeRole(ctx, pool); err != nil {
+		return err
+	}
+
 	if _, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS task_router_schema_migrations (
 			filename   TEXT PRIMARY KEY,
@@ -45,6 +57,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		)
 	`); err != nil {
 		return fmt.Errorf("pgconfig: create task_router_schema_migrations: %w", err)
+	}
+
+	if err := grantRuntimeRolePrivileges(ctx, pool); err != nil {
+		return err
 	}
 
 	entries, err := fs.ReadDir(migrationsFS, "migrations")

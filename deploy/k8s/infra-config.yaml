@@ -8,15 +8,37 @@
 # this ConfigMap's values with real service DNS names/addresses for
 # cluster-hosted or managed infra, with no code change required (only the
 # config source changes, same principle as Section 1.4's Secrets guidance).
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ccaas-infra-config
-  namespace: ccaas-dev
+#
+# TWO Postgres connection identities (2026-09-14 fix -- see
+# ARCHITECTURE_FLOW.md §5 and GAPS.md's "Closed gaps" section for the full
+# writeup):
+#   - POSTGRES_USER ("ccaas"): the Postgres SUPERUSER every service's
+#     Migrate() connects as at startup ONLY, to run schema migrations and
+#     provision/grant the runtime role below (CREATE ROLE/GRANT require
+#     superuser or table-owner privilege). NEVER used for a service's
+#     ongoing, steady-state queries.
+#   - POSTGRES_RUNTIME_USER ("ccaas_app"): the shared, non-superuser,
+#     NOBYPASSRLS role every service's ACTUAL ongoing queries connect as.
+#     This is the fix for a real bug: "ccaas" is a Postgres superuser
+#     (POSTGRES_USER always becomes one on the official postgres:16
+#     bootstrap image), and Postgres superusers unconditionally bypass
+#     Row-Level Security regardless of FORCE ROW LEVEL SECURITY -- so
+#     every RLS policy in this repo (tenant_identity_users,
+#     task_router_queues/statuses/attributes) was silently a no-op against
+#     real traffic despite being correctly written. POSTGRES_RUNTIME_USER
+#     is created idempotently by each service's own Migrate() (see e.g.
+#     services/tenant-identity/internal/pgstore/runtime_role.go) --
+#     nothing here provisions it directly; this ConfigMap just names it so
+#     every deployment.yaml can compose a matching RUNTIME_POSTGRES_DSN.
+#     Every service in this repo uses this same runtime role uniformly
+#     (not just the two services with RLS tables today), so a future
+#     RLS-protected table never silently inherits the superuser-bypass bug
+#     again.
 data:
   REDIS_ADDR: "host.docker.internal:6379"
   NATS_URL: "nats://host.docker.internal:4222"
   POSTGRES_HOST: "host.docker.internal"
   POSTGRES_PORT: "5432"
   POSTGRES_USER: "ccaas"
+  POSTGRES_RUNTIME_USER: "ccaas_app"
   POSTGRES_DB: "ccaas"

@@ -62,8 +62,29 @@ import (
 )
 
 type serviceConfig struct {
-	GRPCPort    string `env:"TENANT_IDENTITY_GRPC_PORT" envDefault:"50051"`
+	GRPCPort string `env:"TENANT_IDENTITY_GRPC_PORT" envDefault:"50051"`
+	// PostgresDSN authenticates as the Postgres SUPERUSER ("ccaas" by
+	// default -- see deploy/k8s/infra-config.yaml's POSTGRES_USER). Used
+	// ONLY for running pgstore.Migrate at startup (CREATE ROLE/GRANT
+	// require superuser or table-owner privilege) -- never for this
+	// service's ongoing queries. See RuntimePostgresDSN below.
 	PostgresDSN string `env:"POSTGRES_DSN,required"`
+	// RuntimePostgresDSN authenticates as pgstore.RuntimeRole, the
+	// shared, non-superuser, NOBYPASSRLS role pgstore.Migrate provisions
+	// (see internal/pgstore/runtime_role.go). This is what backs
+	// `tenantStore`, `userStore`, and `keyStore` below -- this service's
+	// actual, ongoing queries, including against the RLS-protected
+	// tenant_identity_users table. Connecting those queries as the
+	// superuser would silently bypass Row-Level Security (Postgres
+	// superusers unconditionally bypass RLS, FORCE ROW LEVEL SECURITY
+	// notwithstanding -- FORCE only binds the table owner) -- this was a
+	// real, now-fixed bug (confirmed live: ListUsers returned every
+	// tenant's users, not just the caller's); see ARCHITECTURE_FLOW.md §5
+	// and GAPS.md's "Closed gaps" section for the full writeup. Composed
+	// the same $(VAR)-interpolation way POSTGRES_DSN is in
+	// deploy/k8s/tenant-identity/deployment.yaml, from
+	// POSTGRES_RUNTIME_USER/POSTGRES_RUNTIME_PASSWORD.
+	RuntimePostgresDSN string `env:"RUNTIME_POSTGRES_DSN,required"`
 	// JWTTTLSeconds is the short-lived JWT expiry (architecture doc
 	// Section 2.2: "issues short-lived JWTs"). Default 1 hour.
 	JWTTTLSeconds int `env:"TENANT_IDENTITY_JWT_TTL_SECONDS" envDefault:"3600"`
@@ -111,30 +132,46 @@ func main() {
 	defer stop()
 
 	// --- Postgres ---
-	// Two pools against the same database, mirroring task-router's
-	// cmd/main.go pattern: pgtenant.Pool for tenant-scoped queries
-	// (users), and a raw pgxpool.Pool for migrations plus the two
-	// genuinely non-tenant-scoped tables (tenants registry, signing
-	// keypair) that have no tenant_id to funnel through
-	// pgtenant.WithTenant with.
-	pgPool, err := pgtenant.Connect(ctx, cfg.PostgresDSN)
+	// migratePool: superuser ("ccaas"), used ONLY to run pgstore.Migrate
+	// (which itself provisions pgstore.RuntimeRole and GRANTs it
+	// privileges -- see internal/pgstore/migrate.go and
+	// runtime_role.go). Never used for this service's ongoing domain
+	// queries -- closed immediately after Migrate returns.
+	migratePool, err := pgxpool.New(ctx, cfg.PostgresDSN)
 	if err != nil {
-		logger.Error("failed to connect to postgres", slog.Any("error", err))
+		logger.Error("failed to connect raw postgres pool for migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if err := pgstore.Migrate(ctx, migratePool); err != nil {
+		migratePool.Close()
+		logger.Error("failed to run postgres migrations", slog.Any("error", err))
+		os.Exit(1)
+	}
+	migratePool.Close()
+
+	// Two runtime pools against the same database, both authenticated as
+	// pgstore.RuntimeRole (non-superuser, NOBYPASSRLS) so Row-Level
+	// Security is genuinely enforced rather than silently bypassed --
+	// mirroring task-router's cmd/main.go pattern: pgtenant.Pool for
+	// tenant-scoped queries (users, RLS-protected), and a raw
+	// pgxpool.Pool for the two genuinely non-tenant-scoped tables
+	// (tenants registry, signing keypair) that have no tenant_id to
+	// funnel through pgtenant.WithTenant with. See RuntimePostgresDSN's
+	// field doc comment above for why both switched away from the
+	// superuser connection used above.
+	pgPool, err := pgtenant.Connect(ctx, cfg.RuntimePostgresDSN)
+	if err != nil {
+		logger.Error("failed to connect to postgres as runtime role", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer pgPool.Close()
 
-	rawPool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	rawPool, err := pgxpool.New(ctx, cfg.RuntimePostgresDSN)
 	if err != nil {
-		logger.Error("failed to connect raw postgres pool", slog.Any("error", err))
+		logger.Error("failed to connect raw postgres pool as runtime role", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer rawPool.Close()
-
-	if err := pgstore.Migrate(ctx, rawPool); err != nil {
-		logger.Error("failed to run postgres migrations", slog.Any("error", err))
-		os.Exit(1)
-	}
 
 	tenantStore := pgstore.NewTenantStore(rawPool)
 	userStore := pgstore.NewUserStore(pgPool)

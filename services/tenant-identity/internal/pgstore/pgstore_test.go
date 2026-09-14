@@ -49,9 +49,35 @@ const rlsTestRole = "tenant_identity_rls_test_role"
 // explicitly here for clarity) and grants it exactly the privileges
 // internal/pgstore's queries need on tenant_identity_users, mirroring what
 // a real deployment's application role would be provisioned with.
+//
+// Runs inside a pg_advisory_xact_lock-guarded transaction, using the SAME
+// advisory lock key Migrate's own runtime-role provisioning uses (see
+// migrate.go's Migrate doc comment) -- deliberately, not coincidentally:
+// this file's tests (TestUserCRUDAndTenantIsolation etc.) and
+// internal/grpcapi's independent test package both connect and, directly
+// or via Migrate, GRANT privileges on tenant_identity_users concurrently
+// under `go test ./...`'s default concurrent-package execution. Two
+// GRANTs on the same table from two sessions race on that table's ACL
+// entry in pg_class (observed in practice as Postgres error XX000 "tuple
+// concurrently updated" the first time this file's GRANT and Migrate's
+// new runtime-role GRANT ran against each other) -- sharing one advisory
+// lock key across both call sites serializes them against EACH OTHER,
+// not just within each one's own package, which two independent lock
+// keys would not achieve.
 func ensureRLSTestRole(ctx context.Context, t *testing.T, rawPool *pgxpool.Pool) {
 	t.Helper()
-	if _, err := rawPool.Exec(ctx, fmt.Sprintf(`
+
+	tx, err := rawPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin rls test role lock tx: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(runtimeRoleAdvisoryLockKey)); err != nil {
+		t.Fatalf("acquire rls test role advisory lock: %v", err)
+	}
+
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`
 		DO $$
 		BEGIN
 			IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %[1]s) THEN
@@ -62,11 +88,15 @@ func ensureRLSTestRole(ctx context.Context, t *testing.T, rawPool *pgxpool.Pool)
 	`, pgQuoteLiteral(rlsTestRole), pgQuoteIdent(rlsTestRole))); err != nil {
 		t.Fatalf("create rls test role: %v", err)
 	}
-	if _, err := rawPool.Exec(ctx, fmt.Sprintf(
+	if _, err := tx.Exec(ctx, fmt.Sprintf(
 		`GRANT SELECT, INSERT, UPDATE, DELETE ON tenant_identity_users TO %s`,
 		pgQuoteIdent(rlsTestRole),
 	)); err != nil {
 		t.Fatalf("grant rls test role privileges: %v", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit rls test role lock tx: %v", err)
 	}
 }
 

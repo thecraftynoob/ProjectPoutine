@@ -24,19 +24,26 @@ Section 1.4 — one namespace per environment, not per tenant).
   K8s can reach the docker-compose-hosted infra on the host (architecture
   doc Section 1.4's dev-loop split: infra in docker-compose, services in
   K8s). `infra-secret.example.yaml` is the matching example for the
-  Postgres password — copy it to `infra-secret.local.yaml` (git-ignored),
-  adjust the password to match your docker-compose.yml, and `kubectl
-  apply` it yourself; it is not applied automatically and the example
-  file's value should never be treated as a real secret. Task Router and
-  Agent & Presence Service (the two services currently wired to real
-  infra) consume both via `envFrom`/`valueFrom` in their `deployment.yaml`;
-  `POSTGRES_DSN` is composed from the ConfigMap + Secret parts using
-  Kubernetes' `$(VAR)` env-var interpolation rather than duplicated as a
-  whole connection string. A real (non-local) deployment replaces the
-  ConfigMap's values and the Secret's source with real cluster-hosted or
-  managed infra addresses/credentials — no application code changes
-  either way, per Section 1.4's Secrets guidance applied to this config
-  too.
+  Postgres password(s) — copy it to `infra-secret.local.yaml`
+  (git-ignored), adjust the password(s) to match your docker-compose.yml,
+  and `kubectl apply` it yourself; it is not applied automatically and the
+  example file's values should never be treated as real secrets. Every
+  service that touches Postgres (task-router, tenant-identity,
+  historical-reporting, background-worker-pool) consumes both via
+  `valueFrom` in its `deployment.yaml` and composes TWO DSNs from the
+  ConfigMap + Secret parts using Kubernetes' `$(VAR)` env-var
+  interpolation rather than duplicating either as a whole connection
+  string: `POSTGRES_DSN` (the Postgres superuser, "ccaas" — used only to
+  run that service's Migrate() at startup) and `RUNTIME_POSTGRES_DSN` (a
+  shared, non-superuser, NOBYPASSRLS runtime role, "ccaas_app" — used for
+  that service's real, ongoing queries, so Row-Level Security is actually
+  enforced rather than silently bypassed by a superuser connection). See
+  ARCHITECTURE_FLOW.md §5 and GAPS.md's "Closed gaps" section for the full
+  writeup of why this two-identity split exists. A real (non-local)
+  deployment replaces the ConfigMap's values and the Secret's source with
+  real cluster-hosted or managed infra addresses/credentials — no
+  application code changes either way, per Section 1.4's Secrets guidance
+  applied to this config too.
 
 ## Rebuilding and redeploying a service's image (local dev)
 
