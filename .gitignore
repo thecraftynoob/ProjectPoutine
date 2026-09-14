@@ -15,6 +15,7 @@ vendor/
 *.env.local
 .env
 /deploy/k8s/infra-secret.local.yaml
+/deploy/k8s/tenant-identity-public-key.local.yaml
 
 # --- Docker ---
 docker-compose.override.yml
@@ -34,3 +35,4 @@ Thumbs.db
 # --- Misc ---
 *.log
 coverage.out
+.claude/

@@ -1,0 +1,50 @@
+# Example ConfigMap for distributing Tenant & Identity Management's JWT
+# signing PUBLIC key to other services in the cluster.
+#
+# services/tenant-identity generates (once, on first-ever startup) an
+# ECDSA P-256 signing keypair, persists the PRIVATE key in Postgres (see
+# services/tenant-identity/internal/pgstore/migrations/003_signing_keypair.sql),
+# and logs the PEM-encoded PUBLIC key prominently on every startup (see
+# cmd/main.go). That public key is what any service needs to verify tokens
+# tenant-identity issues, via pkg/jwtauth.NewVerifier -- and nothing more,
+# since pkg/jwtauth has zero dependency on Postgres/Redis/NATS.
+#
+# Distribution today is a MANUAL operator step, deliberately, for this
+# milestone: copy the PEM block from tenant-identity's startup logs
+# (`kubectl logs -n ccaas-dev deploy/tenant-identity-deployment | grep -A20
+# "SIGNING PUBLIC KEY"`) into the placeholder below, then:
+#
+#   kubectl apply -f deploy/k8s/tenant-identity-public-key.local.yaml
+#
+# (copy this file to tenant-identity-public-key.local.yaml first -- that
+# name is git-ignored, see .gitignore -- so a real deployment's public key
+# is never committed here as a fake "example"). NOT applied automatically.
+#
+# IMPORTANT: this ConfigMap is not consumed by any service's code yet.
+# Wiring pkg/tenantctx (or any other service) to actually mount this
+# ConfigMap and call pkg/jwtauth.Verifier for real request-time token
+# validation is an explicit follow-up milestone -- see
+# services/tenant-identity/README.md and this repo's top-level
+# CCAAS_ENTERPRISE_ARCHITECTURE.md Section 1.1 for the deferred-but-planned
+# JWT-consumer contract. This manifest exists now purely so the manual
+# distribution mechanism and its shape are settled ahead of that work.
+#
+# Key rotation is out of scope for this milestone (see
+# migrations/003_signing_keypair.sql): replacing this ConfigMap's value
+# with a NEW public key, without a corresponding rollout coordinated across
+# every verifying service, would invalidate every token signed under the
+# key those services still expect -- a real rotation scheme (e.g.
+# publishing multiple valid keys with key IDs) is deferred future work.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tenant-identity-public-key
+  namespace: ccaas-dev
+data:
+  # Replace with the PEM block logged by tenant-identity at startup
+  # (BEGIN/END PUBLIC KEY, SubjectPublicKeyInfo / PKIX DER, ECDSA P-256).
+  # This placeholder is NOT a real key and will not verify anything.
+  public_key.pem: |
+    -----BEGIN PUBLIC KEY-----
+    REPLACE_WITH_TENANT_IDENTITY_STARTUP_LOG_PUBLIC_KEY_PEM
+    -----END PUBLIC KEY-----

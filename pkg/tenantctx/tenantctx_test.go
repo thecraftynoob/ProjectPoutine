@@ -140,6 +140,42 @@ func TestUnaryServerInterceptor_HealthCheckExempt(t *testing.T) {
 	}
 }
 
+func TestUnaryServerInterceptor_CustomExemptMethod(t *testing.T) {
+	// A caller-supplied exemption (e.g. Tenant & Identity's Login/
+	// CreateTenant RPCs) must bypass tenant enforcement the same way the
+	// built-in health check does, while any other method name remains
+	// enforced as normal.
+	const exemptMethod = "/tenantidentity.v1.IdentityService/Login"
+	interceptor := UnaryServerInterceptor(exemptMethod)
+
+	handlerCalled := false
+	handler := func(hCtx context.Context, req any) (any, error) {
+		handlerCalled = true
+		return "ok", nil
+	}
+
+	ctx := context.Background() // no metadata attached
+	info := &grpc.UnaryServerInfo{FullMethod: exemptMethod}
+	resp, err := interceptor(ctx, "req", info, handler)
+	if err != nil {
+		t.Fatalf("expected exempt method to bypass tenant enforcement, got error: %v", err)
+	}
+	if !handlerCalled {
+		t.Fatal("expected handler to be invoked for exempt method")
+	}
+	if resp != "ok" {
+		t.Fatalf("unexpected response: %v", resp)
+	}
+
+	// A non-exempt method on the same interceptor instance must still be
+	// enforced.
+	otherInfo := &grpc.UnaryServerInfo{FullMethod: "/tenantidentity.v1.IdentityService/ListUsers"}
+	_, err = interceptor(ctx, "req", otherInfo, handler)
+	if err == nil {
+		t.Fatal("expected non-exempt method to still require tenant metadata")
+	}
+}
+
 func TestUnaryServerInterceptor_NoIncomingMetadataAtAll(t *testing.T) {
 	// No metadata.NewIncomingContext call at all -- simulates a truly bare context.
 	ctx := context.Background()

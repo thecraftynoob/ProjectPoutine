@@ -86,9 +86,20 @@ func extractTenantID(ctx context.Context) (uuid.UUID, error) {
 // and stores it in the handler's context. Requests with a missing or
 // malformed tenant ID are rejected with codes.Unauthenticated before
 // reaching the handler.
-func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
+//
+// exemptMethods lists additional full gRPC method names (e.g.
+// "/tenantidentity.v1.IdentityService/Login") to exempt from tenant
+// enforcement, beyond the always-exempt health check. This exists for
+// services like Tenant & Identity Management that have a small number of
+// RPCs which are themselves how a caller FIRST establishes tenant/token
+// context (CreateTenant, Login, ...) and therefore cannot require that
+// context to already exist -- see that service's proto doc comment and
+// cmd/main.go for the concrete list. Every other service in this repo
+// passes no exemptions, keeping today's behavior identical.
+func UnaryServerInterceptor(exemptMethods ...string) grpc.UnaryServerInterceptor {
+	exempt := exemptSet(exemptMethods)
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		if info.FullMethod == healthCheckMethod {
+		if info.FullMethod == healthCheckMethod || exempt[info.FullMethod] {
 			return handler(ctx, req)
 		}
 		tenantID, err := extractTenantID(ctx)
@@ -97,6 +108,19 @@ func UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 		}
 		return handler(WithTenantID(ctx, tenantID), req)
 	}
+}
+
+// exemptSet builds a lookup set from a full-method-name list, so the
+// interceptor's hot path is a map lookup rather than a linear scan.
+func exemptSet(methods []string) map[string]bool {
+	if len(methods) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(methods))
+	for _, m := range methods {
+		set[m] = true
+	}
+	return set
 }
 
 // wrappedServerStream carries a replacement context (with tenant ID set)
@@ -113,10 +137,12 @@ func (w *wrappedServerStream) Context() context.Context {
 
 // StreamServerInterceptor is the streaming-RPC equivalent of
 // UnaryServerInterceptor: validates x-tenant-id before the stream handler
-// runs, and makes it available via TenantID(stream.Context()).
-func StreamServerInterceptor() grpc.StreamServerInterceptor {
+// runs, and makes it available via TenantID(stream.Context()). See
+// UnaryServerInterceptor for exemptMethods' purpose.
+func StreamServerInterceptor(exemptMethods ...string) grpc.StreamServerInterceptor {
+	exempt := exemptSet(exemptMethods)
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if info.FullMethod == healthWatchMethod {
+		if info.FullMethod == healthWatchMethod || exempt[info.FullMethod] {
 			return handler(srv, ss)
 		}
 		tenantID, err := extractTenantID(ss.Context())

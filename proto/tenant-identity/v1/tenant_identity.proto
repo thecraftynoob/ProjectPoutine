@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package tenantidentity.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1;tenantidentityv1";
+
+// Tenant & Identity Management (architecture doc Section 2.2) is
+// intentionally the most upstream service: CRUD for tenant registration,
+// user/agent identity, simple RBAC role tags, and short-lived JWT issuance
+// consumed by every other service. This pass is core identity + JWT
+// issuance only -- see services/tenant-identity/README.md for what's
+// explicitly out of scope (business-hours/feature-flag tenant config, full
+// OAuth2/OIDC authorization-code flow, MFA, password reset, external IdP
+// federation).
+//
+// NOTE ON TENANT SCOPING: every other service in this repo keeps tenant_id
+// OUT of message fields entirely, since it always travels as gRPC metadata
+// (x-tenant-id) validated by pkg/tenantctx before a handler ever runs (see
+// task_router.proto's note). Tenant & Identity Management is a deliberate,
+// narrow exception for exactly the RPCs that are how a caller FIRST obtains
+// a tenant_id or a token -- there is no metadata to validate yet, because
+// establishing that context is the RPC's entire job:
+//   - CreateTenant / GetTenant / ListTenants: there is no tenant yet (or,
+//     for Get/List, this is platform-registry data, not tenant-owned data)
+//     -- these are platform-admin-ish operations over the tenant registry
+//     itself, not data scoped BY a tenant_id.
+//   - Login: the caller has a username/password and a tenant_id they
+//     already know out-of-band (e.g. from their organization's login page
+//     configuration), but no JWT yet -- that's what this call produces.
+//     tenant_id is necessarily an explicit request field here.
+//   - CreateUser: also takes tenant_id as an explicit field rather than
+//     relying on metadata. This is a deliberate bootstrapping-friendly
+//     choice: the very first user in a brand new tenant cannot yet present
+//     a token (there IS no admin token until an admin user exists to log
+//     in), so CreateUser must be reachable with only a tenant_id in hand,
+//     the same way CreateTenant is reachable with nothing in hand. In a
+//     later milestone, once pkg/tenantctx is wired to real JWT validation,
+//     a production deployment would put an authorization check inside the
+//     handler (e.g. require an authenticated admin-role caller whose OWN
+//     tid claim matches the target tenant_id) rather than relying on
+//     transport-level tenant-context middleware -- that's a handler-level
+//     concern, not a routing concern, precisely because this RPC's
+//     tenant_id is caller-asserted input, not middleware-derived context.
+//   - GetUser / ListUsers: by contrast, these operate WITHIN an
+//     already-established tenant context (an admin who already has a
+//     valid JWT for that tenant looking up users in it), so they take NO
+//     tenant_id field and rely on x-tenant-id metadata like every other
+//     service's steady-state RPCs.
+//
+// TENANTCTX EXEMPTION: CreateTenant, GetTenant, ListTenants, CreateUser,
+// and Login are exempt from pkg/tenantctx's interceptor (see
+// services/tenant-identity/cmd/main.go's exemption list) -- each is
+// reachable with no established tenant context, by design (see above).
+// GetUser and ListUsers are NOT exempt: they operate within an already-
+// established tenant context exactly like every other service's
+// steady-state RPCs, so they go through the same x-tenant-id metadata
+// interceptor as Task Router's/Agent Presence's RPCs and require valid
+// x-tenant-id metadata to be present on the call.
+service TenantService {
+  // CreateTenant registers a brand new tenant in the platform registry.
+  // This is how a caller obtains a real tenant_id in the first place --
+  // there is no tenant context to require yet.
+  rpc CreateTenant(CreateTenantRequest) returns (Tenant);
+
+  // GetTenant retrieves one tenant's registry record by id.
+  rpc GetTenant(GetTenantRequest) returns (Tenant);
+
+  // ListTenants enumerates every registered tenant. Platform-admin-ish;
+  // not scoped by any single tenant_id since it operates across the
+  // registry itself.
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+}
+
+// IdentityService is the user/agent identity, RBAC, and authentication
+// domain: bootstrapping users within a tenant and issuing short-lived JWTs
+// via password login.
+service IdentityService {
+  // CreateUser provisions a new user/agent identity record within a
+  // tenant. Takes tenant_id as an explicit field (see the file-level note
+  // above for why) rather than relying on gRPC metadata -- this is
+  // deliberately reachable before any token exists for that tenant.
+  rpc CreateUser(CreateUserRequest) returns (User);
+
+  // Login verifies username+password within the given tenant and, on
+  // success, mints a short-lived JWT carrying the `tid` (tenant_id),
+  // `sub` (user id), and `roles` claims (architecture doc Section 1.1
+  // Layer 1's future JWT-consumer contract). tenant_id is an explicit
+  // field since the caller has no token yet -- this call is how one is
+  // obtained.
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  // GetUser retrieves one user's identity record within the caller's
+  // already-established tenant context (x-tenant-id metadata).
+  rpc GetUser(GetUserRequest) returns (User);
+
+  // ListUsers enumerates every user within the caller's tenant context
+  // (x-tenant-id metadata).
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+// Tenant mirrors the tenants registry table: id, name, created_at. Not
+// itself tenant-scoped data (it IS the tenant registry) -- see
+// pgstore/migrations for why no RLS applies to this table.
+message Tenant {
+  string tenant_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message CreateTenantRequest {
+  string name = 1;
+}
+
+message GetTenantRequest {
+  string tenant_id = 1;
+}
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse {
+  repeated Tenant tenants = 1;
+}
+
+// User mirrors one tenant-scoped identity record: username, roles (a
+// simple set of string tags -- not a policy engine), created_at. Never
+// carries the password hash outward.
+message User {
+  string user_id = 1;
+  string tenant_id = 2;
+  string username = 3;
+  repeated string roles = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message CreateUserRequest {
+  // Explicit field -- see file-level note on why CreateUser doesn't rely
+  // on x-tenant-id metadata.
+  string tenant_id = 1;
+  string username = 2;
+  string password = 3;
+  repeated string roles = 4;
+}
+
+message LoginRequest {
+  // Explicit field -- the caller has no token yet; this call is how one
+  // is obtained.
+  string tenant_id = 1;
+  string username = 2;
+  string password = 3;
+}
+
+message LoginResponse {
+  // Signed, short-lived JWT (RS256/ES256; see internal/authn) carrying
+  // `tid`, `sub`, and `roles` claims, shaped for pkg/jwtauth.Verifier and
+  // pkg/tenantctx's eventual future consumption.
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
