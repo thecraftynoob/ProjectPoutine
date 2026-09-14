@@ -9,6 +9,8 @@ structural.
 - [`CCAAS_ENTERPRISE_ARCHITECTURE.md`](./CCAAS_ENTERPRISE_ARCHITECTURE.md) — service topology, multi-tenancy model, data/IPC architecture, naming conventions.
 - [`TASK_ROUTER_SPECIFICATION.md`](./TASK_ROUTER_SPECIFICATION.md) — the Task Router's full domain spec (routing algorithm, state machines, event catalog). Implemented — see `services/task-router`.
 - [`PROGRESS.md`](./PROGRESS.md) — running status and to-do list. **Read this first** for what's actually built, deployed, and next.
+- [`CLAUDE.md`](./CLAUDE.md) — persistent project rules (data-flow mapping, K8s-first networking, domain boundaries). Binding for every change, not just suggestions.
+- [`ARCHITECTURE_FLOW.md`](./ARCHITECTURE_FLOW.md) — the living map of actual service-to-service communication (gRPC contracts, NATS event catalog, WebSocket transports, DB table ownership). Kept current per `CLAUDE.md` Rule 1 — update it in the same change that adds/removes a service, endpoint, or event.
 - [`poutine-poc-architecture.md`](./poutine-poc-architecture.md) — a collaborator's separate ESXi/k3s voice PoC (FreeSWITCH, Kafka, Postgres, Redis), kept here as reference for merging voice/SIP work into `voice-media-gateway`. See `PROGRESS.md`'s "Voice merge" section for compatibility notes and open questions — not yet merged.
 
 ## Status
