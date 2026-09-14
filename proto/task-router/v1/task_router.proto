@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package taskrouter.v1;
 
+import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1";
@@ -30,87 +31,165 @@ service TaskRouterService {
   // 5.4 rule 1). The initial status is NOT validated against the Status
   // registry at creation time (spec Section 3.2) — only the status-update
   // capability enforces that.
-  rpc CreateAgent(CreateAgentRequest) returns (Agent);
+  rpc CreateAgent(CreateAgentRequest) returns (Agent) {
+    option (google.api.http) = {
+      post: "/v1/agents"
+      body: "*"
+    };
+  }
 
   // ListAgents enumerates all agents for the tenant.
-  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse) {
+    option (google.api.http) = {
+      get: "/v1/agents"
+    };
+  }
 
   // GetAgent retrieves one agent's full profile.
-  rpc GetAgent(GetAgentRequest) returns (Agent);
+  rpc GetAgent(GetAgentRequest) returns (Agent) {
+    option (google.api.http) = {
+      get: "/v1/agents/{agent_id}"
+    };
+  }
 
   // DeleteAgent deprovisions an agent's routing profile. If the agent
   // currently holds a Reserved or Active task, that task is atomically
   // reset to Pending at its original FIFO position and any tied
   // Offered/Accepted reservation is marked Rejected (reason: agent
   // deleted) — spec Section 5.5.
-  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse);
+  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse) {
+    option (google.api.http) = {
+      delete: "/v1/agents/{agent_id}"
+    };
+  }
 
   // SetAgentStatus changes an agent's master presence value. Rejected if
   // the target status is not a registered Status value.
-  rpc SetAgentStatus(SetAgentStatusRequest) returns (Agent);
+  rpc SetAgentStatus(SetAgentStatusRequest) returns (Agent) {
+    option (google.api.http) = {
+      post: "/v1/agents/{agent_id}/status"
+      body: "*"
+    };
+  }
 
   // ReplaceAgentCapacity fully replaces an agent's per-channel capacity
   // map. Any channel omitted from the input is removed. `active` supplied
   // by the caller is always ignored — a retained channel keeps its live
   // `active` count, a new channel starts at 0.
-  rpc ReplaceAgentCapacity(ReplaceAgentCapacityRequest) returns (Agent);
+  rpc ReplaceAgentCapacity(ReplaceAgentCapacityRequest) returns (Agent) {
+    option (google.api.http) = {
+      post: "/v1/agents/{agent_id}/capacity"
+      body: "*"
+    };
+  }
 
   // ToggleChannelReady flips a single channel's `ready` flag without
   // resending the whole capacity map. If the channel does not yet exist on
   // the agent, it is created with default max=1, interruptible=true.
-  rpc ToggleChannelReady(ToggleChannelReadyRequest) returns (Agent);
+  rpc ToggleChannelReady(ToggleChannelReadyRequest) returns (Agent) {
+    option (google.api.http) = {
+      post: "/v1/agents/{agent_id}/capacity/{channel}/toggle"
+      body: "*"
+    };
+  }
 
   // ReplaceAgentQueues fully replaces an agent's queue memberships.
   // Rejected entirely (no partial application) if any queue ID does not
   // exist.
-  rpc ReplaceAgentQueues(ReplaceAgentQueuesRequest) returns (Agent);
+  rpc ReplaceAgentQueues(ReplaceAgentQueuesRequest) returns (Agent) {
+    option (google.api.http) = {
+      post: "/v1/agents/{agent_id}/queues"
+      body: "*"
+    };
+  }
 
   // ReplaceAgentAttributes fully replaces an agent's stored attribute
   // values, validated for shape against the Attribute registry. Not used
   // for routing. Emits no event (spec Section 6.2).
-  rpc ReplaceAgentAttributes(ReplaceAgentAttributesRequest) returns (Agent);
+  rpc ReplaceAgentAttributes(ReplaceAgentAttributesRequest) returns (Agent) {
+    option (google.api.http) = {
+      post: "/v1/agents/{agent_id}/attributes"
+      body: "*"
+    };
+  }
 
   // ListAgentPendingOffers returns the agent's currently Offered
   // reservations.
-  rpc ListAgentPendingOffers(ListAgentPendingOffersRequest) returns (ListAgentPendingOffersResponse);
+  rpc ListAgentPendingOffers(ListAgentPendingOffersRequest) returns (ListAgentPendingOffersResponse) {
+    option (google.api.http) = {
+      get: "/v1/agents/{agent_id}/offers"
+    };
+  }
 
   // --- Task Lifecycle & Ingestion (spec Section 3.3) ---
 
   // EnqueueTask submits a new unit of work for routing, creating it in
   // Pending status. Rejected if the queue doesn't exist, an attribute is
   // invalid, or a caller-supplied task ID collides with an existing one.
-  rpc EnqueueTask(EnqueueTaskRequest) returns (Task);
+  rpc EnqueueTask(EnqueueTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/v1/tasks"
+      body: "*"
+    };
+  }
 
   // ListTasks enumerates all tasks for the tenant.
-  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
+    option (google.api.http) = {
+      get: "/v1/tasks"
+    };
+  }
 
   // GetTask retrieves one task's current state.
-  rpc GetTask(GetTaskRequest) returns (Task);
+  rpc GetTask(GetTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      get: "/v1/tasks/{task_id}"
+    };
+  }
 
   // CompleteTask signals that an Active task's work is finished, freeing
   // the assigned agent's capacity. Rejected unless the task is currently
   // Active.
-  rpc CompleteTask(CompleteTaskRequest) returns (Task);
+  rpc CompleteTask(CompleteTaskRequest) returns (Task) {
+    option (google.api.http) = {
+      post: "/v1/tasks/{task_id}/complete"
+      body: "*"
+    };
+  }
 
   // --- Reservation Handshake (spec Section 3.4) ---
 
   // AcceptReservation lets an agent agree to take the offered task.
   // Rejected unless the reservation is currently Offered.
-  rpc AcceptReservation(AcceptReservationRequest) returns (Reservation);
+  rpc AcceptReservation(AcceptReservationRequest) returns (Reservation) {
+    option (google.api.http) = {
+      post: "/v1/reservations/{reservation_id}/accept"
+      body: "*"
+    };
+  }
 
   // RejectReservation lets an agent explicitly decline the offered task.
   // Rejected unless the reservation is currently Offered (race-safe
   // re-check). Returns the task to Pending at its original enqueue
   // position and sets the agent's status to the system value
   // "Not Responding".
-  rpc RejectReservation(RejectReservationRequest) returns (Reservation);
+  rpc RejectReservation(RejectReservationRequest) returns (Reservation) {
+    option (google.api.http) = {
+      post: "/v1/reservations/{reservation_id}/reject"
+      body: "*"
+    };
+  }
 
   // --- Observability / Operational (spec Section 3.7) ---
 
   // GetDashboard returns all agents (with live assigned-task counts) and
   // all tasks (with current status/assignment) in a single call, for a
   // monitoring display.
-  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse);
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse) {
+    option (google.api.http) = {
+      get: "/v1/dashboard"
+    };
+  }
 }
 
 // AttributeValue is the polymorphic numeric|boolean value type used in

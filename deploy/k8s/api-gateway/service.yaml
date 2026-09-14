@@ -1,3 +1,16 @@
+# ClusterIP (this repo's default type, same as every other service) --
+# deliberately NOT NodePort/LoadBalancer in this milestone. API Gateway is
+# architecturally the one service meant to eventually be reachable from
+# outside the cluster (architecture doc Section 2.2's "single external
+# entry point"), but real external exposure is via ingress-nginx per
+# architecture doc Section 1.4 -- explicitly out of scope for this pass
+# (see that section's note and deploy/k8s/README.md's "Out of scope for
+# this pass"). Until that's stood up, reach this service the same way
+# every other service in this dev cluster is reached today: `kubectl
+# port-forward svc/api-gateway-svc 8080:8080 -n ccaas-dev` (REST/WebSocket)
+# for local verification. Switching this to NodePort/LoadBalancer or
+# fronting it with an Ingress resource is a config-only change whenever
+# that milestone is picked up -- no application code changes either way.
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,3 +25,6 @@ spec:
     - name: grpc
       port: 50059
       targetPort: 50059
+    - name: http
+      port: 8080
+      targetPort: 8080

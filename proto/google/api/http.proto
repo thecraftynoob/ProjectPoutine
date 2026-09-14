@@ -1,0 +1,110 @@
+// Copyright 2015 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// Vendored locally (not fetched from the Buf Schema Registry / googleapis at
+// generation time) so `buf generate` works without relying on network
+// access to an external registry in this environment -- see
+// proto/buf.gen.yaml's header comment and ARCHITECTURE_FLOW.md for context.
+// Sourced verbatim from
+// https://github.com/googleapis/googleapis/blob/master/google/api/http.proto
+// (the standard well-known type grpc-gateway's `google.api.http` annotation
+// depends on).
+
+syntax = "proto3";
+
+package google.api;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "google.golang.org/genproto/googleapis/api/annotations;annotations";
+option java_multiple_files = true;
+option java_outer_classname = "HttpProto";
+option java_package = "com.google.api";
+option objc_class_prefix = "GAPI";
+
+// Defines the HTTP configuration for an API service. It contains a list of
+// [HttpRule][google.api.HttpRule], each specifying the mapping of an RPC
+// method to one or more HTTP REST API methods.
+message Http {
+  // A list of HTTP configuration rules that apply to individual API
+  // methods.
+  //
+  // **NOTE:** All service configuration rules follow "last one wins" order.
+  repeated HttpRule rules = 1;
+
+  // When set to true, URL path parameters will be fully URI-decoded except
+  // in cases of single segment matches in reserved expansion, where "%2F"
+  // will be left encoded.
+  //
+  // The default behavior is to not decode RFC 6570 reserved characters in
+  // multi segment matches.
+  bool fully_decode_reserved_expansion = 2;
+}
+
+// # gRPC Transcoding
+//
+// gRPC Transcoding is a feature for mapping between a gRPC method and one
+// or more HTTP REST endpoints. It allows developers to build a single API
+// service that supports both gRPC APIs and REST APIs.
+message HttpRule {
+  // Selects a method to which this rule applies.
+  string selector = 1;
+
+  oneof pattern {
+    // Maps to HTTP GET.
+    string get = 2;
+
+    // Maps to HTTP PUT.
+    string put = 3;
+
+    // Maps to HTTP POST.
+    string post = 4;
+
+    // Maps to HTTP DELETE.
+    string delete = 5;
+
+    // Maps to HTTP PATCH.
+    string patch = 6;
+
+    // The custom pattern is used for specifying an HTTP method that is not
+    // included in the `pattern` field, such as HEAD, or "*" to leave the
+    // HTTP method unspecified for this rule.
+    CustomHttpPattern custom = 8;
+  }
+
+  // The name of the request field whose value is mapped to the HTTP
+  // request body, or `*` for mapping all request fields not captured by
+  // the path pattern to the HTTP body, or omitted for not having any HTTP
+  // request body.
+  string body = 7;
+
+  // Optional. The name of the response field whose value is mapped to the
+  // HTTP response body. When omitted, the entire response message will be
+  // used as the HTTP response body.
+  string response_body = 12;
+
+  // Additional HTTP bindings for the selector. Nested bindings must not
+  // contain an `additional_bindings` field themselves (that is, the nesting
+  // may only be one level deep).
+  repeated HttpRule additional_bindings = 11;
+}
+
+// A custom pattern is used for defining custom HTTP verb.
+message CustomHttpPattern {
+  // The name of this custom HTTP verb.
+  string kind = 1;
+
+  // The path matched by this custom verb.
+  string path = 2;
+}

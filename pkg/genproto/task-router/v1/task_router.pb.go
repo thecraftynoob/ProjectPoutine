@@ -7,6 +7,7 @@
 package taskrouterv1
 
 import (
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -1596,7 +1597,7 @@ var File_task_router_v1_task_router_proto protoreflect.FileDescriptor
 
 const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\n" +
-	" task-router/v1/task_router.proto\x12\rtaskrouter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"^\n" +
+	" task-router/v1/task_router.proto\x12\rtaskrouter.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"^\n" +
 	"\x0eAttributeValue\x12#\n" +
 	"\fnumber_value\x18\x01 \x01(\x01H\x00R\vnumberValue\x12\x1f\n" +
 	"\n" +
@@ -1722,26 +1723,28 @@ const file_task_router_v1_task_router_proto_rawDesc = "" +
 	"\x05tasks\x18\x02 \x03(\v2\x13.taskrouter.v1.TaskR\x05tasks\"l\n" +
 	"\x0eDashboardAgent\x12*\n" +
 	"\x05agent\x18\x01 \x01(\v2\x14.taskrouter.v1.AgentR\x05agent\x12.\n" +
-	"\x13assigned_task_count\x18\x02 \x01(\x05R\x11assignedTaskCount2\x9b\v\n" +
-	"\x11TaskRouterService\x12F\n" +
-	"\vCreateAgent\x12!.taskrouter.v1.CreateAgentRequest\x1a\x14.taskrouter.v1.Agent\x12Q\n" +
+	"\x13assigned_task_count\x18\x02 \x01(\x05R\x11assignedTaskCount2\x86\x10\n" +
+	"\x11TaskRouterService\x12]\n" +
+	"\vCreateAgent\x12!.taskrouter.v1.CreateAgentRequest\x1a\x14.taskrouter.v1.Agent\"\x15\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
+	"/v1/agents\x12e\n" +
 	"\n" +
-	"ListAgents\x12 .taskrouter.v1.ListAgentsRequest\x1a!.taskrouter.v1.ListAgentsResponse\x12@\n" +
-	"\bGetAgent\x12\x1e.taskrouter.v1.GetAgentRequest\x1a\x14.taskrouter.v1.Agent\x12T\n" +
-	"\vDeleteAgent\x12!.taskrouter.v1.DeleteAgentRequest\x1a\".taskrouter.v1.DeleteAgentResponse\x12L\n" +
-	"\x0eSetAgentStatus\x12$.taskrouter.v1.SetAgentStatusRequest\x1a\x14.taskrouter.v1.Agent\x12X\n" +
-	"\x14ReplaceAgentCapacity\x12*.taskrouter.v1.ReplaceAgentCapacityRequest\x1a\x14.taskrouter.v1.Agent\x12T\n" +
-	"\x12ToggleChannelReady\x12(.taskrouter.v1.ToggleChannelReadyRequest\x1a\x14.taskrouter.v1.Agent\x12T\n" +
-	"\x12ReplaceAgentQueues\x12(.taskrouter.v1.ReplaceAgentQueuesRequest\x1a\x14.taskrouter.v1.Agent\x12\\\n" +
-	"\x16ReplaceAgentAttributes\x12,.taskrouter.v1.ReplaceAgentAttributesRequest\x1a\x14.taskrouter.v1.Agent\x12u\n" +
-	"\x16ListAgentPendingOffers\x12,.taskrouter.v1.ListAgentPendingOffersRequest\x1a-.taskrouter.v1.ListAgentPendingOffersResponse\x12E\n" +
-	"\vEnqueueTask\x12!.taskrouter.v1.EnqueueTaskRequest\x1a\x13.taskrouter.v1.Task\x12N\n" +
-	"\tListTasks\x12\x1f.taskrouter.v1.ListTasksRequest\x1a .taskrouter.v1.ListTasksResponse\x12=\n" +
-	"\aGetTask\x12\x1d.taskrouter.v1.GetTaskRequest\x1a\x13.taskrouter.v1.Task\x12G\n" +
-	"\fCompleteTask\x12\".taskrouter.v1.CompleteTaskRequest\x1a\x13.taskrouter.v1.Task\x12X\n" +
-	"\x11AcceptReservation\x12'.taskrouter.v1.AcceptReservationRequest\x1a\x1a.taskrouter.v1.Reservation\x12X\n" +
-	"\x11RejectReservation\x12'.taskrouter.v1.RejectReservationRequest\x1a\x1a.taskrouter.v1.Reservation\x12W\n" +
-	"\fGetDashboard\x12\".taskrouter.v1.GetDashboardRequest\x1a#.taskrouter.v1.GetDashboardResponseBRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
+	"ListAgents\x12 .taskrouter.v1.ListAgentsRequest\x1a!.taskrouter.v1.ListAgentsResponse\"\x12\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/agents\x12_\n" +
+	"\bGetAgent\x12\x1e.taskrouter.v1.GetAgentRequest\x1a\x14.taskrouter.v1.Agent\"\x1d\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/agents/{agent_id}\x12s\n" +
+	"\vDeleteAgent\x12!.taskrouter.v1.DeleteAgentRequest\x1a\".taskrouter.v1.DeleteAgentResponse\"\x1d\x82\xd3\xe4\x93\x02\x17*\x15/v1/agents/{agent_id}\x12u\n" +
+	"\x0eSetAgentStatus\x12$.taskrouter.v1.SetAgentStatusRequest\x1a\x14.taskrouter.v1.Agent\"'\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/agents/{agent_id}/status\x12\x83\x01\n" +
+	"\x14ReplaceAgentCapacity\x12*.taskrouter.v1.ReplaceAgentCapacityRequest\x1a\x14.taskrouter.v1.Agent\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/agents/{agent_id}/capacity\x12\x90\x01\n" +
+	"\x12ToggleChannelReady\x12(.taskrouter.v1.ToggleChannelReadyRequest\x1a\x14.taskrouter.v1.Agent\":\x82\xd3\xe4\x93\x024:\x01*\"//v1/agents/{agent_id}/capacity/{channel}/toggle\x12}\n" +
+	"\x12ReplaceAgentQueues\x12(.taskrouter.v1.ReplaceAgentQueuesRequest\x1a\x14.taskrouter.v1.Agent\"'\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/agents/{agent_id}/queues\x12\x89\x01\n" +
+	"\x16ReplaceAgentAttributes\x12,.taskrouter.v1.ReplaceAgentAttributesRequest\x1a\x14.taskrouter.v1.Agent\"+\x82\xd3\xe4\x93\x02%:\x01*\" /v1/agents/{agent_id}/attributes\x12\x9b\x01\n" +
+	"\x16ListAgentPendingOffers\x12,.taskrouter.v1.ListAgentPendingOffersRequest\x1a-.taskrouter.v1.ListAgentPendingOffersResponse\"$\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/agents/{agent_id}/offers\x12[\n" +
+	"\vEnqueueTask\x12!.taskrouter.v1.EnqueueTaskRequest\x1a\x13.taskrouter.v1.Task\"\x14\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/tasks\x12a\n" +
+	"\tListTasks\x12\x1f.taskrouter.v1.ListTasksRequest\x1a .taskrouter.v1.ListTasksResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/tasks\x12Z\n" +
+	"\aGetTask\x12\x1d.taskrouter.v1.GetTaskRequest\x1a\x13.taskrouter.v1.Task\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/tasks/{task_id}\x12p\n" +
+	"\fCompleteTask\x12\".taskrouter.v1.CompleteTaskRequest\x1a\x13.taskrouter.v1.Task\"'\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/tasks/{task_id}/complete\x12\x8d\x01\n" +
+	"\x11AcceptReservation\x12'.taskrouter.v1.AcceptReservationRequest\x1a\x1a.taskrouter.v1.Reservation\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/reservations/{reservation_id}/accept\x12\x8d\x01\n" +
+	"\x11RejectReservation\x12'.taskrouter.v1.RejectReservationRequest\x1a\x1a.taskrouter.v1.Reservation\"3\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/reservations/{reservation_id}/reject\x12n\n" +
+	"\fGetDashboard\x12\".taskrouter.v1.GetDashboardRequest\x1a#.taskrouter.v1.GetDashboardResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/dashboardBRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
 
 var (
 	file_task_router_v1_task_router_proto_rawDescOnce sync.Once

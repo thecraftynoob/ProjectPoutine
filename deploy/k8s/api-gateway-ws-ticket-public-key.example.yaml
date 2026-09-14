@@ -1,0 +1,61 @@
+# Example ConfigMap for distributing API Gateway's WS-TICKET signing
+# PUBLIC key to Agent & Presence Service.
+#
+# This is a SEPARATE, DEDICATED keypair from Tenant & Identity's session-
+# signing keypair (see tenant-identity-public-key.example.yaml) -- API
+# Gateway never holds Tenant & Identity's private key, so it cannot
+# re-issue a real session token. Instead, services/api-gateway/internal/wsticket
+# generates its OWN ECDSA P-256 keypair FRESH ON EVERY PROCESS STARTUP
+# (never persisted to Postgres -- API Gateway is Stateless, architecture
+# doc Section 2.2) and logs the PEM-encoded PUBLIC key prominently at
+# startup, exactly mirroring tenant-identity/cmd/main.go's own banner
+# pattern. See internal/wsticket's package doc comment for the full
+# "why a separate key" and "short-TTL, not single-use" scoping rationale.
+#
+# Distribution today is a MANUAL operator step, deliberately, for this
+# milestone -- same workflow as tenant-identity-public-key:
+#
+#   kubectl logs -n ccaas-dev deploy/api-gateway-deployment | grep -A20 "WS-TICKET SIGNING PUBLIC KEY"
+#
+# copy the PEM block into the placeholder below, then:
+#
+#   kubectl apply -f deploy/k8s/api-gateway-ws-ticket-public-key.local.yaml
+#
+# (copy this file to api-gateway-ws-ticket-public-key.local.yaml first --
+# that name is git-ignored, see .gitignore -- so a real deployment's
+# public key is never committed here as a fake "example"). NOT applied
+# automatically.
+#
+# IMPORTANT: because this key is regenerated on every API Gateway restart
+# (not persisted), this ConfigMap goes STALE every time api-gateway's pod
+# restarts -- any outstanding tickets from before the restart were already
+# expired within ~45s anyway (see the TTL rationale above), but the
+# ConfigMap itself must be re-applied with the freshly logged key after
+# any api-gateway restart for the ?ticket= WebSocket auth path to keep
+# working. This is an accepted manual-step tradeoff for this milestone's
+# single-replica, dev-cluster scope -- see internal/wsticket's doc comment.
+#
+# CONSUMED BY: Agent & Presence Service only (services/agent-presence/cmd/main.go's
+# WS_TICKET_PUBLIC_KEY_PATH, read via pkg/jwtauth.LoadVerifierFromFile and
+# passed to internal/wsserver.New as the SECOND verifier, alongside the
+# existing Tenant & Identity session verifier -- see that package's doc
+# comment). Deliberately OPTIONAL on Agent Presence's side: an
+# unconfigured/absent ConfigMap simply disables the ?ticket= auth path
+# while the original Authorization-header path keeps working unaffected
+# (see agent-presence/cmd/main.go's WSTicketPublicKeyPath doc comment) --
+# Agent Presence does NOT fail closed on a missing ticket key the way it
+# does for the mandatory session-JWT key, since the ticket path is an
+# additive capability, not the sole authentication mechanism.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-ws-ticket-public-key
+  namespace: ccaas-dev
+data:
+  # Replace with the PEM block logged by api-gateway at startup
+  # (BEGIN/END PUBLIC KEY, SubjectPublicKeyInfo / PKIX DER, ECDSA P-256).
+  # This placeholder is NOT a real key and will not verify anything.
+  public_key.pem: |
+    -----BEGIN PUBLIC KEY-----
+    REPLACE_WITH_API_GATEWAY_STARTUP_LOG_WS_TICKET_PUBLIC_KEY_PEM
+    -----END PUBLIC KEY-----

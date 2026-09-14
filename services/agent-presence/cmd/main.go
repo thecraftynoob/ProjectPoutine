@@ -64,6 +64,18 @@ type serviceConfig struct {
 	// endpoint's Authorization header verification (internal/wsserver) --
 	// this service fails closed (refuses to start) without it.
 	JWTPublicKeyPath string `env:"JWT_PUBLIC_KEY_PATH,required"`
+	// WSTicketPublicKeyPath points at the PEM-encoded ECDSA public key API
+	// Gateway's internal/wsticket generates and logs at its own startup
+	// (see deploy/k8s/api-gateway-ws-ticket-public-key.example.yaml),
+	// distributed the same manual-ConfigMap way as
+	// tenant-identity-public-key. Enables the /ws endpoint's ?ticket=
+	// query-parameter auth path (see internal/wsserver's doc comment) --
+	// deliberately OPTIONAL, unlike JWTPublicKeyPath: an empty value
+	// leaves the ticket path disabled (every ?ticket= attempt rejected)
+	// while the original Authorization-header path keeps working
+	// unaffected, so this service does not hard-fail on startup just
+	// because API Gateway hasn't been deployed/configured yet.
+	WSTicketPublicKeyPath string `env:"WS_TICKET_PUBLIC_KEY_PATH"`
 	// TenantIdentityGRPCAddr and ServiceSharedSecret are accepted (and
 	// logged as configured, see main() below) for parity with every
 	// other service's deployment.yaml and forward-compatibility, but this
@@ -115,6 +127,36 @@ func main() {
 		os.Exit(1)
 	}
 
+	// --- WS-ticket verification (optional -- see WSTicketPublicKeyPath's
+	// doc comment). Enables /ws's ?ticket= auth path for browser Agent
+	// Desktop clients proxied through API Gateway.
+	//
+	// A MISSING file (the common case before API Gateway has ever run
+	// once to generate+log its key, or when its ConfigMap's `optional:
+	// true` mount resolves to an empty directory -- see
+	// deploy/k8s/agent-presence/deployment.yaml) is treated as "ticket
+	// path simply not configured yet," not a startup failure -- this
+	// service must keep serving the Authorization-header path
+	// unaffected. A file that EXISTS but fails to parse (corrupt/
+	// malformed PEM) is different: that indicates real misconfiguration,
+	// not absence, so it still fails closed rather than silently
+	// disabling the path. ---
+	var ticketVerifier *jwtauth.Verifier
+	if cfg.WSTicketPublicKeyPath != "" {
+		if _, statErr := os.Stat(cfg.WSTicketPublicKeyPath); statErr == nil {
+			ticketVerifier, err = jwtauth.LoadVerifierFromFile(cfg.WSTicketPublicKeyPath)
+			if err != nil {
+				logger.Error("failed to load WS-ticket verifier -- refusing to start with a misconfigured (not merely absent) ticket key", slog.Any("error", err))
+				os.Exit(1)
+			}
+			logger.Info("ws-ticket auth path enabled")
+		} else {
+			logger.Info("ws-ticket auth path disabled (WS_TICKET_PUBLIC_KEY_PATH set but file not present yet -- likely API Gateway not yet deployed) -- Authorization header path remains fully functional")
+		}
+	} else {
+		logger.Info("ws-ticket auth path disabled (WS_TICKET_PUBLIC_KEY_PATH not set) -- Authorization header path remains fully functional")
+	}
+
 	// --- Service-to-service token source (optional -- see
 	// TenantIdentityGRPCAddr's doc comment). Not tied to any particular
 	// tenant at startup (this service has no steady-state, tenant-scoped
@@ -132,7 +174,7 @@ func main() {
 
 	// --- Connection registry + WebSocket transport ---
 	reg := registry.New()
-	wsHandler := wsserver.New(reg, verifier, logger)
+	wsHandler := wsserver.New(reg, verifier, ticketVerifier, logger)
 
 	// --- Cross-replica fan-out + NATS relay consumer ---
 	fanout := relay.NewFanout(redisClient, reg, logger)

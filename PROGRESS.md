@@ -4,24 +4,26 @@
 the end of each work session (or ask Claude to). This is the source of truth
 for "what's done, what's next" — more durable than chat history.
 
-**Last updated:** 2026-09-14 (JWT auth wired platform-wide)
+**Last updated:** 2026-09-13 (API Gateway built: REST routing, JWT
+validation, WebSocket ticket + proxying)
 
 ---
 
 ## 1. Where things stand
 
-### Services with real domain logic (3 of 9)
+### Services with real domain logic (4 of 9)
 
 | Service | Status | Notes |
 |---|---|---|
-| **Task Router** | Done, deployed | Full domain per `TASK_ROUTER_SPECIFICATION.md` §1-6. Redis hot path (Lua scripts, atomic commits), Postgres-backed Queue/Status/Attribute registries with RLS, full event catalog to NATS JetStream. §7 gaps (transfers, skill matching, force-routing, bullseye, queue timeouts) deliberately out of scope. Now requires a real bearer JWT on every RPC. |
-| **Agent & Presence Service** | Done, deployed | WebSocket connection registry + relay of Task Router's 4 client-facing events (reservation.created/rejected, agent.status.changed, agent.deleted). Redis pub/sub cross-replica fan-out. WebSocket upgrade now requires a real `Authorization: Bearer <jwt>` header (placeholder query-param auth retired). |
-| **Tenant & Identity Management** | Done, deployed | Tenant CRUD, bcrypt login, RBAC roles, ES256 JWT issuance, plus a new `IssueServiceToken` RPC for service-to-service auth. `pkg/jwtauth` is now wired into every service. Keypair persisted in Postgres, generated once. |
+| **Task Router** | Done, deployed | Full domain per `TASK_ROUTER_SPECIFICATION.md` §1-6. Redis hot path (Lua scripts, atomic commits), Postgres-backed Queue/Status/Attribute registries with RLS, full event catalog to NATS JetStream. §7 gaps (transfers, skill matching, force-routing, bullseye, queue timeouts) deliberately out of scope. Requires a real bearer JWT on every RPC. Now also fronted by API Gateway's REST surface (see below) — RPCs unchanged, only `google.api.http` annotations added. |
+| **Agent & Presence Service** | Done, deployed | WebSocket connection registry + relay of Task Router's 4 client-facing events (reservation.created/rejected, agent.status.changed, agent.deleted). Redis pub/sub cross-replica fan-out. WebSocket upgrade accepts EITHER a real `Authorization: Bearer <jwt>` header (original path) OR a `?ticket=` query parameter (new — short-lived ticket minted by API Gateway, for browser clients that can't set custom WebSocket headers). Both paths share one claims-resolution helper. |
+| **Tenant & Identity Management** | Done, deployed | Tenant CRUD, bcrypt login, RBAC roles, ES256 JWT issuance, plus a new `IssueServiceToken` RPC for service-to-service auth. `pkg/jwtauth` is now wired into every service. Keypair persisted in Postgres, generated once. Now also fronted by API Gateway's REST surface. |
+| **API Gateway** | Done, deployed | Single external entry point: REST routing (via `grpc-gateway`, `google.api.http` annotations added directly to Task Router's and Tenant & Identity's existing RPCs) fronting both services, end-user JWT validation (Layer 1, forwarded to backends for Layer 2 re-verification), and WebSocket upgrade proxying to Agent Presence for browser Agent Desktop clients via a short-lived ws-ticket mechanism (API Gateway holds its own dedicated, in-memory-only signing keypair for tickets — separate from Tenant & Identity's session key). Full REST route table: `ARCHITECTURE_FLOW.md` §1.1. TLS termination, rate limiting, quota enforcement, feature-flagging, and `ingress-nginx` external exposure remain explicitly deferred (architecture doc §1.1/§1.4) — this pass is JWT validation + routing + WS proxying only. |
 
-### Stub services (6 of 9) — build/health-check only, no domain logic
+### Stub services (5 of 9) — build/health-check only, no domain logic
 
 Voice/SIP Media Gateway, Digital Channels Gateway, Workflow/IVR, Historical
-Reporting, Background Worker Pool, API Gateway.
+Reporting, Background Worker Pool.
 
 ### Shared platform plumbing (`/pkg`)
 
@@ -79,20 +81,36 @@ calling another service's gRPC API on its own behalf).
 
 ### Next service to build (pick one — see recommendation below)
 
-4. **API Gateway** — BFF: end-user JWT validation, REST routing to internal
-   gRPC services, WebSocket upgrade proxying for Agent Desktop. This is the
-   first service a real external client would ever hit, and the natural
-   place to originate tokens for browser-based clients that can't easily
-   attach custom WebSocket headers themselves.
-5. **Digital Channels Gateway or Voice/SIP Media Gateway** — channel
+4. **Digital Channels Gateway or Voice/SIP Media Gateway** — channel
    ingestion, normalizing inbound work into Task Router's `Task`
    abstraction. Gives Task Router real inbound traffic instead of only
    synthetic test-driven tasks. See "Voice merge" below for the
    Voice/SIP Media Gateway option specifically.
-6. **Historical Reporting** — durable NATS JetStream consumer materializing
+5. **Historical Reporting** — durable NATS JetStream consumer materializing
    the full event catalog into query-optimized Postgres storage.
-7. **Background Worker Pool** — first real job type + `pgqueue.Poller`
+6. **Background Worker Pool** — first real job type + `pgqueue.Poller`
    wiring (e.g. post-call wrap-up sync, webhook delivery).
+
+### API Gateway follow-ups (small, but real — see `ARCHITECTURE_FLOW.md` §4.1 for the flow these refer to)
+
+7. **True single-use ws-ticket protection**, if a future milestone judges
+   the current short-TTL-only scoping insufficient (e.g. once WebSocket
+   traffic carries something more sensitive than task/presence
+   notifications) — would need a shared "used tickets" registry (Redis,
+   likely, given Agent Presence already depends on it) rather than the
+   current pure-JWT-TTL approach.
+8. **ws-ticket key durability across API Gateway restarts.** The
+   ticket-signing keypair is regenerated fresh (never persisted) on every
+   API Gateway startup, which means the `api-gateway-ws-ticket-public-key`
+   ConfigMap goes stale on every restart and needs a manual re-`kubectl
+   apply` — fine for a single-replica dev deployment, but worth revisiting
+   (e.g. Postgres-backed persistence like Tenant & Identity's own signing
+   key) before a multi-replica or production deployment.
+9. **External exposure via `ingress-nginx`.** API Gateway's `Service` is
+   `ClusterIP` today (like every other service) — real external
+   reachability needs the `ingress-nginx` + `mkcert` TLS setup
+   architecture doc §1.4 already flags as deferred, manual/interactive
+   local-cluster tooling.
 
 ### Voice merge (friend's ESXi/k3s PoC → `voice-media-gateway`)
 
@@ -163,22 +181,17 @@ existing schema/pipeline — before any code merge work starts.
 
 ## 3. Recommended next step
 
-**Build API Gateway next.**
+**Build Digital Channels Gateway or Voice/SIP Media Gateway next.**
 
-Reasoning: every service now genuinely enforces tenant isolation via real
-JWTs — that story is done. API Gateway is the one piece standing between
-this system and an actual external client being able to do anything at
-all: today, every call into the platform has to originate from a
-throwaway internal test client with a hand-obtained token. API Gateway is
-also the natural place to solve the practical end of the auth story (an
-end-user login flow, issuing/refreshing tokens for a browser client) since
-it's the edge that's supposed to originate tenant context in the first
-place per architecture doc §1.1 Layer 1.
-
-Runner-up: **Voice/SIP Media Gateway**, if the friend's-PoC merge (see
-below) becomes actionable before then — it would let the API Gateway
-build and the voice merge proceed somewhat in parallel, since they touch
-different services.
+Reasoning: API Gateway is now done — a real external client can reach the
+platform end-to-end (REST + WebSocket) with real JWT auth at the edge.
+Task Router still only ever sees synthetic, test-driven tasks; the
+highest-value next step is giving it real inbound traffic by normalizing
+an actual channel (chat/SMS/email, or voice/SIP) into its `Task`
+abstraction. See "Voice merge" below for the Voice/SIP Media Gateway
+option specifically, which has its own open prerequisites (Kafka→NATS,
+tenant_id retrofit, language/framework confirmation) worth resolving in
+parallel with a Digital Channels Gateway build rather than gating on them.
 
 ---
 

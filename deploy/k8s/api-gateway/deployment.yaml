@@ -22,9 +22,47 @@ spec:
           ports:
             - containerPort: 50059
               name: grpc
+            - containerPort: 8080
+              name: http
           env:
             - name: API_GATEWAY_GRPC_PORT
               value: "50059"
+            - name: API_GATEWAY_HTTP_ADDR
+              value: ":8080"
+            # TASK_ROUTER_GRPC_ADDR / TENANT_IDENTITY_GRPC_ADDR: in-cluster
+            # Service DNS names for the two backend gRPC servers this
+            # gateway fronts (CLAUDE.md Rule 2 -- never hardcoded
+            # localhost outside this envDefault-vs-manifest-override
+            # split; see services/api-gateway/cmd/main.go's serviceConfig
+            # doc comments).
+            - name: TASK_ROUTER_GRPC_ADDR
+              value: "task-router-svc:50054"
+            - name: TENANT_IDENTITY_GRPC_ADDR
+              value: "tenant-identity-svc:50051"
+            # AGENT_PRESENCE_WS_ADDR: Agent Presence's own WebSocket
+            # endpoint, dialed by internal/wsproxy when proxying a
+            # ticket-authenticated browser connection upstream. Uses the
+            # in-cluster Service DNS name + the ws port from
+            # deploy/k8s/agent-presence/service.yaml.
+            - name: AGENT_PRESENCE_WS_ADDR
+              value: "ws://agent-presence-svc:8085/ws"
+            # JWT_PUBLIC_KEY_PATH: see the tenant-identity-public-key
+            # ConfigMap volume/volumeMount below -- read at startup via
+            # pkg/jwtauth.LoadVerifierFromFile, validates end-user SESSION
+            # bearer tokens on every non-exempt REST route (Layer 1
+            # enforcement, architecture doc Section 1.1). Required: this
+            # service fails closed without it.
+            - name: JWT_PUBLIC_KEY_PATH
+              value: "/etc/ccaas/jwt/public_key.pem"
+            # API_GATEWAY_WS_TICKET_TTL_SECONDS: see
+            # services/api-gateway/internal/wsticket's doc comment for the
+            # short-TTL-not-single-use scoping this controls.
+            - name: API_GATEWAY_WS_TICKET_TTL_SECONDS
+              value: "45"
+          volumeMounts:
+            - name: tenant-identity-public-key
+              mountPath: /etc/ccaas/jwt
+              readOnly: true
           livenessProbe:
             exec:
               command: ["grpc_health_probe", "-addr=:50059"]
@@ -35,3 +73,7 @@ spec:
               command: ["grpc_health_probe", "-addr=:50059"]
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: tenant-identity-public-key
+          configMap:
+            name: tenant-identity-public-key

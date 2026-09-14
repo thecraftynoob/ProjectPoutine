@@ -24,36 +24,82 @@ own.
 
 ## WebSocket authentication
 
-The `/ws` upgrade endpoint requires a real, signature-verified JWT on
-every connection attempt, carried as a standard HTTP `Authorization`
-header on the upgrade request:
+The `/ws` upgrade endpoint accepts **either** of two credential forms:
+
+**1. Authorization header** (original path -- any client that can set a
+custom header on its WebSocket upgrade request, e.g. a native desktop
+client or a server-side test harness):
 
 ```
 GET /ws
 Authorization: Bearer <jwt>
 ```
 
-- The token must verify against Tenant & Identity Management's published
-  ECDSA P-256 public key (see `pkg/jwtauth`, and
-  `deploy/k8s/tenant-identity-public-key.example.yaml` for how this
-  service obtains that key) or the upgrade is rejected with **HTTP 401**.
+Verified against Tenant & Identity Management's published ECDSA P-256
+session-signing public key (see `pkg/jwtauth`, and
+`deploy/k8s/tenant-identity-public-key.example.yaml` for how this service
+obtains that key).
+
+**2. `?ticket=` query parameter** (new path -- for browser-based Agent
+Desktop clients, whose native `WebSocket` API cannot set custom headers on
+the upgrade request):
+
+```
+GET /ws?ticket=<jwt>
+```
+
+A browser client obtains this ticket from API Gateway's
+`POST /v1/ws-ticket` (itself requiring a normal valid session bearer
+token), then opens the WebSocket through API Gateway's `/ws` proxy (or,
+in this dev topology, directly against this endpoint — see
+`services/api-gateway/internal/wsproxy`'s doc comment for the proxy
+design). The ticket is verified against a **SEPARATE, dedicated** public
+key -- API Gateway's own ws-ticket signing key (see
+`deploy/k8s/api-gateway-ws-ticket-public-key.example.yaml`), **not**
+Tenant & Identity's session key, since API Gateway never holds that
+private key. This path is deliberately **optional**: if
+`WS_TICKET_PUBLIC_KEY_PATH` is unset or its file isn't present yet (e.g.
+API Gateway hasn't been deployed), every `?ticket=` attempt is rejected
+with 401 while the Authorization-header path above keeps working
+completely unaffected -- see `cmd/main.go`'s `WSTicketPublicKeyPath` doc
+comment.
+
+Both paths funnel through the exact same claims-resolution logic
+(`internal/wsserver.ResolveClaims`), so neither duplicates the mapping
+rule below:
+
 - `tenant_id` is derived exclusively from the verified token's `tid`
   claim -- never from client-supplied input, per architecture doc Section
   1.1 Layer 1.
 - `agent_id` is derived from the verified token's `sub` (Subject) claim.
   See "Agent identity" below for the reasoning behind this mapping.
-- A missing `Authorization` header, a malformed header (not
-  `Bearer <token>`), an invalid signature, an expired token, or a token
-  with no `sub` claim are all rejected with **HTTP 401** -- the
+- A missing credential (no header AND no `?ticket=`), a malformed header
+  (not `Bearer <token>`), an invalid signature, an expired token, or a
+  token with no `sub` claim are all rejected with **HTTP 401** -- the
   semantically correct status for "unauthenticated," replacing this
   endpoint's earlier placeholder scheme's use of 400 (which was really
-  reporting "malformed query parameters," a different failure class).
+  reporting "malformed query parameters," a different failure class). If
+  an `Authorization` header is present at all, only that path is
+  attempted (a malformed/invalid header does not "fall back" to checking
+  `?ticket=`).
 
 This is Layer 2 (service-level) enforcement per architecture doc Section
 1.1: this service independently verifies the token itself rather than
 trusting an upstream API Gateway's Layer 1 resolution blindly, matching
 the pattern `pkg/tenantctx` already applies to this service's gRPC
-surface.
+surface -- true for BOTH auth paths, including the ticket API Gateway
+itself already validated the underlying session token for.
+
+### Ticket scoping: short TTL, not true single-use
+
+A ws-ticket has a short default TTL (45s, see
+`services/api-gateway/internal/wsticket`) but is **not** single-use/
+replay-protected -- there is no server-side "used tickets" registry on
+either side. This is a conscious, documented scope decision: the short
+TTL already bounds an intercepted ticket's exposure window tightly, and a
+database-backed used-ticket registry would add real shared-state
+infrastructure for a marginal improvement at this system's current scale.
+See `internal/wsticket`'s package doc comment for the full reasoning.
 
 ### Agent identity: reconciling Task Router's Agent with Tenant &
 Identity's User
@@ -89,12 +135,21 @@ reasoning inline with the code.
 
 ### Connecting
 
+Either:
+
 ```
 GET /ws
 Authorization: Bearer <jwt>
 ```
 
-On success, the HTTP connection is upgraded to a WebSocket. The server
+or:
+
+```
+GET /ws?ticket=<jwt>
+```
+
+See "WebSocket authentication" above for the full contract. On success,
+the HTTP connection is upgraded to a WebSocket. The server
 sends no message on connect; frames arrive only as matching events occur.
 There is no client-to-server message contract -- any inbound message from
 the client is read and discarded (reads exist purely to detect
@@ -211,6 +266,7 @@ design rationale.
 | `AGENT_PRESENCE_REDIS_DB` | `0` | Redis logical DB index |
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL (consumes Task Router's event stream) |
 | `JWT_PUBLIC_KEY_PATH` | *(required)* | Path to the PEM-encoded ECDSA public key used to verify both gRPC bearer tokens and `/ws` Authorization headers -- see `deploy/k8s/tenant-identity-public-key.example.yaml` |
+| `WS_TICKET_PUBLIC_KEY_PATH` | *(optional, unset)* | Path to API Gateway's PEM-encoded ECDSA ws-ticket public key, enabling `/ws?ticket=` -- see `deploy/k8s/api-gateway-ws-ticket-public-key.example.yaml`. Absent/unreadable file disables the ticket path only; the Authorization header path is unaffected. |
 
 Port `8085` was chosen as a free port in this repo's port range (gRPC
 services occupy `50051`-`5005x`; HTTP/WS services elsewhere in the
@@ -262,7 +318,12 @@ RPC in the current scope needs it.
   registration/unregistration lifecycle on connect/disconnect with
   tenant_id/agent_id correctly derived from verified claims, actual
   message delivery over a real WebSocket connection, and graceful-
-  shutdown connection draining.
+  shutdown connection draining. Additionally covers the `?ticket=` path
+  with its own (deliberately different) test keypair: valid ticket
+  accepted and registered, ticket signed by an untrusted key rejected,
+  expired ticket rejected, and the ticket path rejecting every attempt
+  when no ticket verifier is configured (nil) while the header path
+  keeps working.
 - End-to-end live smoke test: see the milestone's final report for the
   actual run performed (real `agent-presence` + real `task-router`, a
   real WebSocket client, a real Task Router gRPC call producing a

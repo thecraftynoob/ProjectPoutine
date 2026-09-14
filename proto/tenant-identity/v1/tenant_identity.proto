@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package tenantidentity.v1;
 
+import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1;tenantidentityv1";
@@ -63,15 +64,28 @@ service TenantService {
   // CreateTenant registers a brand new tenant in the platform registry.
   // This is how a caller obtains a real tenant_id in the first place --
   // there is no tenant context to require yet.
-  rpc CreateTenant(CreateTenantRequest) returns (Tenant);
+  rpc CreateTenant(CreateTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      post: "/v1/tenants"
+      body: "*"
+    };
+  }
 
   // GetTenant retrieves one tenant's registry record by id.
-  rpc GetTenant(GetTenantRequest) returns (Tenant);
+  rpc GetTenant(GetTenantRequest) returns (Tenant) {
+    option (google.api.http) = {
+      get: "/v1/tenants/{tenant_id}"
+    };
+  }
 
   // ListTenants enumerates every registered tenant. Platform-admin-ish;
   // not scoped by any single tenant_id since it operates across the
   // registry itself.
-  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse) {
+    option (google.api.http) = {
+      get: "/v1/tenants"
+    };
+  }
 }
 
 // IdentityService is the user/agent identity, RBAC, and authentication
@@ -82,7 +96,12 @@ service IdentityService {
   // tenant. Takes tenant_id as an explicit field (see the file-level note
   // above for why) rather than relying on gRPC metadata -- this is
   // deliberately reachable before any token exists for that tenant.
-  rpc CreateUser(CreateUserRequest) returns (User);
+  rpc CreateUser(CreateUserRequest) returns (User) {
+    option (google.api.http) = {
+      post: "/v1/tenants/{tenant_id}/users"
+      body: "*"
+    };
+  }
 
   // Login verifies username+password within the given tenant and, on
   // success, mints a short-lived JWT carrying the `tid` (tenant_id),
@@ -90,15 +109,28 @@ service IdentityService {
   // Layer 1's future JWT-consumer contract). tenant_id is an explicit
   // field since the caller has no token yet -- this call is how one is
   // obtained.
-  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/login"
+      body: "*"
+    };
+  }
 
   // GetUser retrieves one user's identity record within the caller's
   // already-established tenant context (x-tenant-id metadata).
-  rpc GetUser(GetUserRequest) returns (User);
+  rpc GetUser(GetUserRequest) returns (User) {
+    option (google.api.http) = {
+      get: "/v1/users/{user_id}"
+    };
+  }
 
   // ListUsers enumerates every user within the caller's tenant context
   // (x-tenant-id metadata).
-  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = {
+      get: "/v1/users"
+    };
+  }
 
   // IssueServiceToken mints a short-lived JWT for SERVICE-to-service calls
   // (as opposed to Login's end-user, username+password path). This is

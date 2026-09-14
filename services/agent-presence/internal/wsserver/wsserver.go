@@ -5,21 +5,54 @@
 // IPC row; TASK_ROUTER_SPECIFICATION.md Section 3.5/6.3 for the delivery
 // contract this service relays).
 //
-// # Authentication
+// # Authentication: two paths, one claims-resolution helper
 //
-// The WebSocket upgrade endpoint requires a real, signature-verified JWT
-// on every connection attempt, carried as a standard HTTP Authorization
-// header on the upgrade request:
+// The WebSocket upgrade endpoint accepts EITHER of two credential forms on
+// a connection attempt:
 //
-//	GET /ws
-//	Authorization: Bearer <jwt>
+//  1. A real, signature-verified session JWT (issued by Tenant & Identity
+//     Management's Login RPC), carried as a standard HTTP Authorization
+//     header on the upgrade request:
 //
-// This replaces an earlier placeholder scheme that trusted unsigned
-// `?tenant_id=&agent_id=` query parameters -- see PROGRESS.md's history
-// for that scheme's known insecurity. tenant_id is derived exclusively
-// from the verified token's `tid` claim (never from client input, per
-// architecture doc Section 1.1 Layer 1) and agent_id is derived from the
-// verified token's `sub` (Subject) claim.
+//     GET /ws
+//     Authorization: Bearer <jwt>
+//
+//     This is the original path (replacing an earlier placeholder scheme
+//     that trusted unsigned `?tenant_id=&agent_id=` query parameters --
+//     see PROGRESS.md's history for that scheme's known insecurity), kept
+//     unchanged and fully working for any client that CAN set a custom
+//     header on its WebSocket upgrade request (e.g. a native desktop
+//     client, or a server-side test harness).
+//
+//  2. A short-lived "ws-ticket", carried as a `?ticket=<jwt>` query
+//     parameter:
+//
+//     GET /ws?ticket=<jwt>
+//
+//     This path exists because a browser's native WebSocket API cannot
+//     set custom headers on the upgrade request, so a browser-based Agent
+//     Desktop has no way to present the header form above. API Gateway's
+//     POST /v1/ws-ticket endpoint (itself requiring a normal, valid
+//     session bearer token, like any other authenticated REST route)
+//     mints this ticket -- see services/api-gateway/internal/wsticket's
+//     doc comment for the full minting design and the short-TTL-not-
+//     single-use scoping tradeoff it documents. The ticket carries the
+//     SAME `tid`/`sub` claim shape as a session JWT, but is signed by API
+//     Gateway's own dedicated ticket-signing key (NOT Tenant & Identity's
+//     session-signing key -- deliberately a separate, narrower trust
+//     root), so this server verifies it with a SECOND, ticket-scoped
+//     Verifier distinct from the one used for path 1.
+//
+// Both paths resolve to the exact same jwtauth.Claims shape and feed the
+// exact same connection-registration logic below (see ResolveClaims,
+// factored out so neither path duplicates the tenant/agent-identity
+// mapping logic) -- they differ only in which Verifier checks the
+// signature and where the token is read from on the HTTP request.
+//
+// tenant_id is derived exclusively from the verified token's `tid` claim
+// (never from client input, per architecture doc Section 1.1 Layer 1) and
+// agent_id is derived from the verified token's `sub` (Subject) claim, for
+// either path.
 //
 // # Agent identity: reconciling Task Router's Agent with Tenant &
 // Identity's User
@@ -85,7 +118,7 @@ const bearerPrefix = "Bearer "
 // endpoint's earlier placeholder scheme's use of 400 Bad Request for
 // malformed query parameters.
 var (
-	errMissingAuthHeader   = errors.New("missing Authorization header")
+	errMissingCredential   = errors.New("missing Authorization header or ?ticket= query parameter")
 	errMalformedAuthHeader = errors.New(`Authorization header must be "Bearer <token>"`)
 	errMissingSubjectClaim = errors.New("token has no subject (sub) claim to use as agent_id")
 )
@@ -101,8 +134,19 @@ func (e invalidTokenError) Unwrap() error { return e.err }
 // Server is an http.Handler serving the WebSocket upgrade endpoint.
 type Server struct {
 	registry *registry.Registry
+	// verifier validates the Authorization header path (session JWTs
+	// issued by Tenant & Identity's Login RPC).
 	verifier *jwtauth.Verifier
-	logger   *slog.Logger
+	// ticketVerifier validates the ?ticket= query parameter path
+	// (short-lived tickets minted by API Gateway's internal/wsticket).
+	// May be nil: a deployment that has not configured API Gateway's
+	// ticket public key simply never accepts the ticket path, and every
+	// ?ticket= attempt is rejected the same as a missing credential --
+	// this keeps the header path fully functional with zero new
+	// required configuration, per this package's doc comment ("both
+	// should keep working").
+	ticketVerifier *jwtauth.Verifier
+	logger         *slog.Logger
 
 	mu   sync.Mutex
 	conn map[*wsConnection]struct{}
@@ -110,20 +154,22 @@ type Server struct {
 
 // New constructs a Server backed by reg (the process's connection
 // Registry, shared with the NATS relay so delivered events reach
-// connections registered here) and verifier, used to validate the
-// Authorization header on every upgrade request. verifier must be
-// non-nil -- this is a security control and fails closed at construction
-// time (see cmd/main.go, which refuses to start rather than pass a nil
-// verifier here).
-func New(reg *registry.Registry, verifier *jwtauth.Verifier, logger *slog.Logger) *Server {
+// connections registered here), verifier (validates the Authorization
+// header path) and ticketVerifier (validates the ?ticket= query parameter
+// path -- see package doc comment; nil disables the ticket path only).
+// verifier must be non-nil -- this is a security control and fails closed
+// at construction time (see cmd/main.go, which refuses to start rather
+// than pass a nil verifier here).
+func New(reg *registry.Registry, verifier *jwtauth.Verifier, ticketVerifier *jwtauth.Verifier, logger *slog.Logger) *Server {
 	if verifier == nil {
 		panic("wsserver: New called with a nil verifier -- refusing to serve unauthenticated WebSocket connections")
 	}
 	return &Server{
-		registry: reg,
-		verifier: verifier,
-		logger:   logger,
-		conn:     make(map[*wsConnection]struct{}),
+		registry:       reg,
+		verifier:       verifier,
+		ticketVerifier: ticketVerifier,
+		logger:         logger,
+		conn:           make(map[*wsConnection]struct{}),
 	}
 }
 
@@ -184,20 +230,53 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	readLoop(r.Context(), c)
 }
 
-// authenticate validates the Authorization header on an upgrade request
-// and returns the verified claims. Returns an error (suitable for direct
-// inclusion in an HTTP 401 body) on any missing/malformed/invalid token.
-func (s *Server) authenticate(r *http.Request) (jwtauth.Claims, error) {
-	raw := r.Header.Get("Authorization")
-	if raw == "" {
-		return jwtauth.Claims{}, errMissingAuthHeader
-	}
-	if len(raw) <= len(bearerPrefix) || !strings.EqualFold(raw[:len(bearerPrefix)], bearerPrefix) {
-		return jwtauth.Claims{}, errMalformedAuthHeader
-	}
-	token := raw[len(bearerPrefix):]
+// TicketQueryParam is the query parameter name the ?ticket= auth path
+// reads from -- must match services/api-gateway/internal/wsproxy's
+// TicketQueryParam exactly, since that package forwards a client's ticket
+// to this server under the same name.
+const TicketQueryParam = "ticket"
 
-	claims, err := s.verifier.Verify(token)
+// authenticate resolves the credential presented on an upgrade request --
+// EITHER an Authorization header (session JWT, verified against s.verifier)
+// OR a ?ticket= query parameter (ws-ticket, verified against
+// s.ticketVerifier) -- and returns the verified claims. The header path is
+// tried first (if an Authorization header is present at all, only that
+// path is attempted -- a request is not allowed to "fall back" from a
+// malformed/invalid header to a ticket, which would blur which credential
+// actually authenticated the connection); the ticket path is tried only
+// when no Authorization header is present. Returns an error (suitable for
+// direct inclusion in an HTTP 401 body) on any missing/malformed/invalid
+// credential from either path.
+func (s *Server) authenticate(r *http.Request) (jwtauth.Claims, error) {
+	if raw := r.Header.Get("Authorization"); raw != "" {
+		if len(raw) <= len(bearerPrefix) || !strings.EqualFold(raw[:len(bearerPrefix)], bearerPrefix) {
+			return jwtauth.Claims{}, errMalformedAuthHeader
+		}
+		return ResolveClaims(s.verifier, raw[len(bearerPrefix):])
+	}
+
+	if ticket := r.URL.Query().Get(TicketQueryParam); ticket != "" {
+		if s.ticketVerifier == nil {
+			return jwtauth.Claims{}, errMissingCredential
+		}
+		return ResolveClaims(s.ticketVerifier, ticket)
+	}
+
+	return jwtauth.Claims{}, errMissingCredential
+}
+
+// ResolveClaims verifies token against verifier and applies this
+// service's shared claims-to-identity mapping rule (tenant_id <- `tid`,
+// agent_id <- `sub`, and `sub` must be non-empty -- see package doc
+// comment's "Agent identity" section). Both the Authorization-header path
+// and the ?ticket= path above call this so neither duplicates the mapping
+// logic or its validation rule, and so services/api-gateway's wsproxy
+// package can perform the identical resolution when it validates a ticket
+// before dialing upstream (fail-fast client-side check; Agent Presence
+// itself is still the authority that re-verifies independently on the
+// upstream leg -- Layer 2 defense in depth).
+func ResolveClaims(verifier *jwtauth.Verifier, token string) (jwtauth.Claims, error) {
+	claims, err := verifier.Verify(token)
 	if err != nil {
 		return jwtauth.Claims{}, invalidTokenError{err}
 	}

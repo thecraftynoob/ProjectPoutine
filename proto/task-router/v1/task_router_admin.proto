@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package taskrouter.v1;
 
+import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1";
@@ -20,49 +21,96 @@ service TaskRouterAdminService {
 
   // RegisterQueue creates a new named work bucket. Rejected if the ID
   // already exists.
-  rpc RegisterQueue(RegisterQueueRequest) returns (Queue);
+  rpc RegisterQueue(RegisterQueueRequest) returns (Queue) {
+    option (google.api.http) = {
+      post: "/v1/admin/queues"
+      body: "*"
+    };
+  }
 
   // ListQueues enumerates all registered queues.
-  rpc ListQueues(ListQueuesRequest) returns (ListQueuesResponse);
+  rpc ListQueues(ListQueuesRequest) returns (ListQueuesResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/queues"
+    };
+  }
 
   // GetQueue retrieves one queue plus every agent currently a member of
   // it.
-  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse);
+  rpc GetQueue(GetQueueRequest) returns (GetQueueResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/queues/{queue_id}"
+    };
+  }
 
   // RemoveQueue deletes a queue definition. Any agent still listing this
   // queue, or any task still referencing it, is not updated — the
   // reference becomes orphaned rather than blocking the delete.
-  rpc RemoveQueue(RemoveQueueRequest) returns (RemoveQueueResponse);
+  rpc RemoveQueue(RemoveQueueRequest) returns (RemoveQueueResponse) {
+    option (google.api.http) = {
+      delete: "/v1/admin/queues/{queue_id}"
+    };
+  }
 
   // --- Status Registry (spec Section 3.6) ---
 
   // RegisterStatus extends the allow-list of valid agent statuses.
   // Rejected if already present.
-  rpc RegisterStatus(RegisterStatusRequest) returns (StatusEntry);
+  rpc RegisterStatus(RegisterStatusRequest) returns (StatusEntry) {
+    option (google.api.http) = {
+      post: "/v1/admin/statuses"
+      body: "*"
+    };
+  }
 
   // ListStatuses enumerates the registry.
-  rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse);
+  rpc ListStatuses(ListStatusesRequest) returns (ListStatusesResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/statuses"
+    };
+  }
 
   // RemoveStatus shrinks the allow-list. Agents currently set to this
   // status are unaffected; the removal only blocks future assignment.
-  rpc RemoveStatus(RemoveStatusRequest) returns (RemoveStatusResponse);
+  rpc RemoveStatus(RemoveStatusRequest) returns (RemoveStatusResponse) {
+    option (google.api.http) = {
+      delete: "/v1/admin/statuses/{status}"
+    };
+  }
 
   // --- Attribute Registry (spec Section 3.6) ---
 
   // RegisterAttribute defines a new named, typed field usable in Agent/
   // Task attribute maps. Rejected on invalid type or duplicate name.
-  rpc RegisterAttribute(RegisterAttributeRequest) returns (AttributeDefinition);
+  rpc RegisterAttribute(RegisterAttributeRequest) returns (AttributeDefinition) {
+    option (google.api.http) = {
+      post: "/v1/admin/attributes"
+      body: "*"
+    };
+  }
 
   // ListAttributes enumerates the registry.
-  rpc ListAttributes(ListAttributesRequest) returns (ListAttributesResponse);
+  rpc ListAttributes(ListAttributesRequest) returns (ListAttributesResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/attributes"
+    };
+  }
 
   // GetAttribute retrieves one attribute's definition plus every agent
   // currently assigned a value for it.
-  rpc GetAttribute(GetAttributeRequest) returns (GetAttributeResponse);
+  rpc GetAttribute(GetAttributeRequest) returns (GetAttributeResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/attributes/{name}"
+    };
+  }
 
   // RemoveAttribute retires a named field. Existing agent/task values
   // referencing it are unaffected; removal only blocks future use.
-  rpc RemoveAttribute(RemoveAttributeRequest) returns (RemoveAttributeResponse);
+  rpc RemoveAttribute(RemoveAttributeRequest) returns (RemoveAttributeResponse) {
+    option (google.api.http) = {
+      delete: "/v1/admin/attributes/{name}"
+    };
+  }
 }
 
 // Queue mirrors spec Section 2.4 exactly.

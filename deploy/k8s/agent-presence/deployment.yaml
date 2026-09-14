@@ -46,6 +46,17 @@ spec:
             # (internal/wsserver).
             - name: JWT_PUBLIC_KEY_PATH
               value: "/etc/ccaas/jwt/public_key.pem"
+            # WS_TICKET_PUBLIC_KEY_PATH: see the
+            # api-gateway-ws-ticket-public-key ConfigMap volume/
+            # volumeMount below -- enables /ws's ?ticket= auth path for
+            # browser Agent Desktop clients proxied through API Gateway
+            # (internal/wsserver's doc comment). Deliberately optional --
+            # see api-gateway-ws-ticket-public-key.example.yaml's
+            # "CONSUMED BY" note: an unconfigured/missing key here only
+            # disables the ticket path, the Authorization header path
+            # keeps working unaffected.
+            - name: WS_TICKET_PUBLIC_KEY_PATH
+              value: "/etc/ccaas/ws-ticket-jwt/public_key.pem"
             # SERVICE_SHARED_SECRET: the shared credential this service
             # supplies to Tenant & Identity's IssueServiceToken RPC --
             # see deploy/k8s/service-credential.example.yaml.
@@ -62,6 +73,9 @@ spec:
             - name: tenant-identity-public-key
               mountPath: /etc/ccaas/jwt
               readOnly: true
+            - name: api-gateway-ws-ticket-public-key
+              mountPath: /etc/ccaas/ws-ticket-jwt
+              readOnly: true
           livenessProbe:
             exec:
               command: ["grpc_health_probe", "-addr=:50055"]
@@ -76,3 +90,14 @@ spec:
         - name: tenant-identity-public-key
           configMap:
             name: tenant-identity-public-key
+        # optional: true -- this ConfigMap may not exist yet (e.g. before
+        # API Gateway has been deployed/started once to generate and log
+        # its ws-ticket public key -- see that ConfigMap's example file).
+        # A missing ConfigMap then mounts an empty directory rather than
+        # blocking this pod from scheduling; WSTicketPublicKeyPath being
+        # unreadable at that path is handled as "ticket path disabled"
+        # by cmd/main.go, not a startup failure -- see its doc comment.
+        - name: api-gateway-ws-ticket-public-key
+          configMap:
+            name: api-gateway-ws-ticket-public-key
+            optional: true

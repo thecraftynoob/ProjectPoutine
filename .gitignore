@@ -17,6 +17,7 @@ vendor/
 /deploy/k8s/infra-secret.local.yaml
 /deploy/k8s/tenant-identity-public-key.local.yaml
 /deploy/k8s/service-credential.local.yaml
+/deploy/k8s/api-gateway-ws-ticket-public-key.local.yaml
 
 # --- Docker ---
 docker-compose.override.yml

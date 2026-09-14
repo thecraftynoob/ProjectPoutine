@@ -31,14 +31,27 @@ func testKeypair(t *testing.T) (*jwtauth.Signer, *jwtauth.Verifier) {
 
 func newTestServer(t *testing.T) (*httptest.Server, *registry.Registry, *jwtauth.Signer) {
 	t.Helper()
+	srv, reg, signer, _ := newTestServerWithTicket(t)
+	return srv, reg, signer
+}
+
+// newTestServerWithTicket is newTestServer's superset, additionally
+// returning a ticket signer for tests exercising the ?ticket= auth path.
+// The header-path signer/verifier and the ticket-path signer/verifier are
+// deliberately DIFFERENT keypairs, mirroring production (Tenant &
+// Identity's session key vs. API Gateway's dedicated ticket key -- see
+// services/api-gateway/internal/wsticket's doc comment).
+func newTestServerWithTicket(t *testing.T) (*httptest.Server, *registry.Registry, *jwtauth.Signer, *jwtauth.Signer) {
+	t.Helper()
 	signer, verifier := testKeypair(t)
+	ticketSigner, ticketVerifier := testKeypair(t)
 	reg := registry.New()
-	s := New(reg, verifier, discardLogger())
+	s := New(reg, verifier, ticketVerifier, discardLogger())
 	mux := http.NewServeMux()
 	mux.Handle("/ws", s)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, reg, signer
+	return srv, reg, signer, ticketSigner
 }
 
 func discardLogger() *slog.Logger {
@@ -218,7 +231,7 @@ func TestNew_PanicsOnNilVerifier(t *testing.T) {
 			t.Fatal("expected New to panic when constructed with a nil verifier")
 		}
 	}()
-	New(registry.New(), nil, discardLogger())
+	New(registry.New(), nil, nil, discardLogger())
 }
 
 func TestDelivery_MessageReachesClient(t *testing.T) {
@@ -275,7 +288,7 @@ func TestDelivery_MessageReachesClient(t *testing.T) {
 func TestShutdownClosesConnections(t *testing.T) {
 	signer, verifier := testKeypair(t)
 	reg := registry.New()
-	s := New(reg, verifier, discardLogger())
+	s := New(reg, verifier, nil, discardLogger())
 	mux := http.NewServeMux()
 	mux.Handle("/ws", s)
 	srv := httptest.NewServer(mux)
@@ -314,5 +327,128 @@ func TestShutdownClosesConnections(t *testing.T) {
 	_, _, err = conn.Read(readCtx)
 	if err == nil {
 		t.Fatalf("expected client read to fail after server-initiated shutdown")
+	}
+}
+
+// --- ?ticket= auth path (services/api-gateway/internal/wsticket's
+// counterpart) ---
+
+// ticketWsURL builds the ws:// upgrade URL with a ?ticket= parameter, for
+// tests that actually perform a WebSocket Dial.
+func ticketWsURL(httpURL, ticket string) string {
+	return wsURL(httpURL) + "?ticket=" + ticket
+}
+
+// ticketHTTPURL builds the plain http:// URL with a ?ticket= parameter,
+// for tests that expect the upgrade to be rejected before ever reaching
+// the WebSocket handshake (a plain http.Get, mirroring how the existing
+// header-path rejection tests call http.Get(srv.URL+"/ws") rather than
+// attempting a real Dial).
+func ticketHTTPURL(httpURL, ticket string) string {
+	return httpURL + "/ws?ticket=" + ticket
+}
+
+func TestUpgrade_ValidTicket(t *testing.T) {
+	srv, reg, _, ticketSigner := newTestServerWithTicket(t)
+
+	tenantID := uuid.New()
+	ticket, _, err := ticketSigner.Issue(jwtauth.Claims{TenantID: tenantID, Subject: "agent-1"}, time.Minute)
+	if err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, resp, err := websocket.Dial(ctx, ticketWsURL(srv.URL, ticket), nil)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.CloseNow()
+
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("expected 101 Switching Protocols, got %d", resp.StatusCode)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, ok := reg.Lookup(tenantID.String(), "agent-1"); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected connection to be registered under tenant/agent derived from ticket claims")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestUpgrade_TicketSignedByWrongKey(t *testing.T) {
+	srv, _, _, _ := newTestServerWithTicket(t)
+
+	// Sign with a key the server's ticketVerifier does NOT trust (e.g. the
+	// session-JWT signer, or any other unrelated key) -- must be rejected
+	// just like an untrusted session JWT is.
+	otherSigner, _ := testKeypair(t)
+	ticket, _, err := otherSigner.Issue(jwtauth.Claims{TenantID: uuid.New(), Subject: "agent-1"}, time.Minute)
+	if err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	resp, err := http.Get(ticketHTTPURL(srv.URL, ticket))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for a ticket signed by an untrusted key, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpgrade_ExpiredTicket(t *testing.T) {
+	srv, _, _, ticketSigner := newTestServerWithTicket(t)
+
+	ticket, _, err := ticketSigner.Issue(jwtauth.Claims{TenantID: uuid.New(), Subject: "agent-1"}, -time.Second)
+	if err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	resp, err := http.Get(ticketHTTPURL(srv.URL, ticket))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for an expired ticket, got %d", resp.StatusCode)
+	}
+}
+
+func TestUpgrade_TicketPathDisabledWhenNoTicketVerifierConfigured(t *testing.T) {
+	// A deployment that has not configured a ticket verifier (nil) must
+	// reject every ?ticket= attempt rather than panic or silently accept
+	// it -- see New's doc comment.
+	_, verifier := testKeypair(t)
+	reg := registry.New()
+	s := New(reg, verifier, nil, discardLogger())
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	signer, _ := testKeypair(t)
+	ticket, _, err := signer.Issue(jwtauth.Claims{TenantID: uuid.New(), Subject: "agent-1"}, time.Minute)
+	if err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	resp, err := http.Get(ticketHTTPURL(srv.URL, ticket))
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 when no ticket verifier is configured, got %d", resp.StatusCode)
 	}
 }

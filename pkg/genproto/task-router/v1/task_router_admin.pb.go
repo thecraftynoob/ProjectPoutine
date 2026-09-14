@@ -7,6 +7,7 @@
 package taskrouterv1
 
 import (
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -1058,7 +1059,7 @@ var File_task_router_v1_task_router_admin_proto protoreflect.FileDescriptor
 
 const file_task_router_v1_task_router_admin_proto_rawDesc = "" +
 	"\n" +
-	"&task-router/v1/task_router_admin.proto\x12\rtaskrouter.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"]\n" +
+	"&task-router/v1/task_router_admin.proto\x12\rtaskrouter.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"]\n" +
 	"\x05Queue\x12\x19\n" +
 	"\bqueue_id\x18\x01 \x01(\tR\aqueueId\x129\n" +
 	"\n" +
@@ -1112,20 +1113,21 @@ const file_task_router_v1_task_router_admin_proto_rawDesc = "" +
 	"\rAttributeType\x12\x1e\n" +
 	"\x1aATTRIBUTE_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16ATTRIBUTE_TYPE_NUMERIC\x10\x01\x12\x1a\n" +
-	"\x16ATTRIBUTE_TYPE_BOOLEAN\x10\x022\xdc\a\n" +
-	"\x16TaskRouterAdminService\x12J\n" +
-	"\rRegisterQueue\x12#.taskrouter.v1.RegisterQueueRequest\x1a\x14.taskrouter.v1.Queue\x12Q\n" +
+	"\x16ATTRIBUTE_TYPE_BOOLEAN\x10\x022\xc8\n" +
 	"\n" +
-	"ListQueues\x12 .taskrouter.v1.ListQueuesRequest\x1a!.taskrouter.v1.ListQueuesResponse\x12K\n" +
-	"\bGetQueue\x12\x1e.taskrouter.v1.GetQueueRequest\x1a\x1f.taskrouter.v1.GetQueueResponse\x12T\n" +
-	"\vRemoveQueue\x12!.taskrouter.v1.RemoveQueueRequest\x1a\".taskrouter.v1.RemoveQueueResponse\x12R\n" +
-	"\x0eRegisterStatus\x12$.taskrouter.v1.RegisterStatusRequest\x1a\x1a.taskrouter.v1.StatusEntry\x12W\n" +
-	"\fListStatuses\x12\".taskrouter.v1.ListStatusesRequest\x1a#.taskrouter.v1.ListStatusesResponse\x12W\n" +
-	"\fRemoveStatus\x12\".taskrouter.v1.RemoveStatusRequest\x1a#.taskrouter.v1.RemoveStatusResponse\x12`\n" +
-	"\x11RegisterAttribute\x12'.taskrouter.v1.RegisterAttributeRequest\x1a\".taskrouter.v1.AttributeDefinition\x12]\n" +
-	"\x0eListAttributes\x12$.taskrouter.v1.ListAttributesRequest\x1a%.taskrouter.v1.ListAttributesResponse\x12W\n" +
-	"\fGetAttribute\x12\".taskrouter.v1.GetAttributeRequest\x1a#.taskrouter.v1.GetAttributeResponse\x12`\n" +
-	"\x0fRemoveAttribute\x12%.taskrouter.v1.RemoveAttributeRequest\x1a&.taskrouter.v1.RemoveAttributeResponseBRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
+	"\x16TaskRouterAdminService\x12g\n" +
+	"\rRegisterQueue\x12#.taskrouter.v1.RegisterQueueRequest\x1a\x14.taskrouter.v1.Queue\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/admin/queues\x12k\n" +
+	"\n" +
+	"ListQueues\x12 .taskrouter.v1.ListQueuesRequest\x1a!.taskrouter.v1.ListQueuesResponse\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/admin/queues\x12p\n" +
+	"\bGetQueue\x12\x1e.taskrouter.v1.GetQueueRequest\x1a\x1f.taskrouter.v1.GetQueueResponse\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/admin/queues/{queue_id}\x12y\n" +
+	"\vRemoveQueue\x12!.taskrouter.v1.RemoveQueueRequest\x1a\".taskrouter.v1.RemoveQueueResponse\"#\x82\xd3\xe4\x93\x02\x1d*\x1b/v1/admin/queues/{queue_id}\x12q\n" +
+	"\x0eRegisterStatus\x12$.taskrouter.v1.RegisterStatusRequest\x1a\x1a.taskrouter.v1.StatusEntry\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/admin/statuses\x12s\n" +
+	"\fListStatuses\x12\".taskrouter.v1.ListStatusesRequest\x1a#.taskrouter.v1.ListStatusesResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/admin/statuses\x12|\n" +
+	"\fRemoveStatus\x12\".taskrouter.v1.RemoveStatusRequest\x1a#.taskrouter.v1.RemoveStatusResponse\"#\x82\xd3\xe4\x93\x02\x1d*\x1b/v1/admin/statuses/{status}\x12\x81\x01\n" +
+	"\x11RegisterAttribute\x12'.taskrouter.v1.RegisterAttributeRequest\x1a\".taskrouter.v1.AttributeDefinition\"\x1f\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/admin/attributes\x12{\n" +
+	"\x0eListAttributes\x12$.taskrouter.v1.ListAttributesRequest\x1a%.taskrouter.v1.ListAttributesResponse\"\x1c\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/admin/attributes\x12|\n" +
+	"\fGetAttribute\x12\".taskrouter.v1.GetAttributeRequest\x1a#.taskrouter.v1.GetAttributeResponse\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/admin/attributes/{name}\x12\x85\x01\n" +
+	"\x0fRemoveAttribute\x12%.taskrouter.v1.RemoveAttributeRequest\x1a&.taskrouter.v1.RemoveAttributeResponse\"#\x82\xd3\xe4\x93\x02\x1d*\x1b/v1/admin/attributes/{name}BRZPgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/task-router/v1;taskrouterv1b\x06proto3"
 
 var (
 	file_task_router_v1_task_router_admin_proto_rawDescOnce sync.Once

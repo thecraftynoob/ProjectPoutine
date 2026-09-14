@@ -7,6 +7,7 @@
 package tenantidentityv1
 
 import (
+	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -770,7 +771,7 @@ var File_tenant_identity_v1_tenant_identity_proto protoreflect.FileDescriptor
 
 const file_tenant_identity_v1_tenant_identity_proto_rawDesc = "" +
 	"\n" +
-	"(tenant-identity/v1/tenant_identity.proto\x12\x11tenantidentity.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"t\n" +
+	"(tenant-identity/v1/tenant_identity.proto\x12\x11tenantidentity.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"t\n" +
 	"\x06Tenant\x12\x1b\n" +
 	"\ttenant_id\x18\x01 \x01(\tR\btenantId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x129\n" +
@@ -815,17 +816,17 @@ const file_tenant_identity_v1_tenant_identity_proto_rawDesc = "" +
 	"\x19IssueServiceTokenResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +
-	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\x8d\x02\n" +
-	"\rTenantService\x12Q\n" +
-	"\fCreateTenant\x12&.tenantidentity.v1.CreateTenantRequest\x1a\x19.tenantidentity.v1.Tenant\x12K\n" +
-	"\tGetTenant\x12#.tenantidentity.v1.GetTenantRequest\x1a\x19.tenantidentity.v1.Tenant\x12\\\n" +
-	"\vListTenants\x12%.tenantidentity.v1.ListTenantsRequest\x1a&.tenantidentity.v1.ListTenantsResponse2\xb9\x03\n" +
-	"\x0fIdentityService\x12K\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\xdb\x02\n" +
+	"\rTenantService\x12i\n" +
+	"\fCreateTenant\x12&.tenantidentity.v1.CreateTenantRequest\x1a\x19.tenantidentity.v1.Tenant\"\x16\x82\xd3\xe4\x93\x02\x10:\x01*\"\v/v1/tenants\x12l\n" +
+	"\tGetTenant\x12#.tenantidentity.v1.GetTenantRequest\x1a\x19.tenantidentity.v1.Tenant\"\x1f\x82\xd3\xe4\x93\x02\x19\x12\x17/v1/tenants/{tenant_id}\x12q\n" +
+	"\vListTenants\x12%.tenantidentity.v1.ListTenantsRequest\x1a&.tenantidentity.v1.ListTenantsResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/tenants2\xae\x04\n" +
+	"\x0fIdentityService\x12u\n" +
 	"\n" +
-	"CreateUser\x12$.tenantidentity.v1.CreateUserRequest\x1a\x17.tenantidentity.v1.User\x12J\n" +
-	"\x05Login\x12\x1f.tenantidentity.v1.LoginRequest\x1a .tenantidentity.v1.LoginResponse\x12E\n" +
-	"\aGetUser\x12!.tenantidentity.v1.GetUserRequest\x1a\x17.tenantidentity.v1.User\x12V\n" +
-	"\tListUsers\x12#.tenantidentity.v1.ListUsersRequest\x1a$.tenantidentity.v1.ListUsersResponse\x12n\n" +
+	"CreateUser\x12$.tenantidentity.v1.CreateUserRequest\x1a\x17.tenantidentity.v1.User\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/tenants/{tenant_id}/users\x12e\n" +
+	"\x05Login\x12\x1f.tenantidentity.v1.LoginRequest\x1a .tenantidentity.v1.LoginResponse\"\x19\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth/login\x12b\n" +
+	"\aGetUser\x12!.tenantidentity.v1.GetUserRequest\x1a\x17.tenantidentity.v1.User\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/users/{user_id}\x12i\n" +
+	"\tListUsers\x12#.tenantidentity.v1.ListUsersRequest\x1a$.tenantidentity.v1.ListUsersResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/users\x12n\n" +
 	"\x11IssueServiceToken\x12+.tenantidentity.v1.IssueServiceTokenRequest\x1a,.tenantidentity.v1.IssueServiceTokenResponseBZZXgithub.com/thecraftynoob/ProjectPoutine/pkg/genproto/tenant-identity/v1;tenantidentityv1b\x06proto3"
 
 var (

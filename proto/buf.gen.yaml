@@ -4,7 +4,21 @@
 # Prerequisites (see repo README / Makefile):
 #   go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 #   go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+#   go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@latest
 # and $(go env GOPATH)/bin must be on PATH.
+#
+# protoc-gen-grpc-gateway reads the `google.api.http` method options added
+# directly to the RPCs in task_router.proto/task_router_admin.proto/
+# tenant_identity.proto (see those files) and emits a *.pb.gw.go per proto
+# file, alongside the existing *.pb.go/_grpc.pb.go, registering a
+# runtime.ServeMux handler that translates HTTP/JSON to the matching gRPC
+# call. API Gateway (services/api-gateway/internal/httpapi) builds that mux
+# into its HTTP server rather than hand-writing REST handlers -- one source
+# of truth per RPC, standard grpc-gateway pattern (see PROGRESS.md's API
+# Gateway milestone). The two google/api/*.proto files the annotation
+# depends on are vendored locally under proto/google/api/ (not resolved via
+# the Buf Schema Registry) so generation works without relying on outbound
+# network access to an external registry in this environment.
 version: v2
 plugins:
   - local: protoc-gen-go
@@ -13,3 +27,8 @@ plugins:
   - local: protoc-gen-go-grpc
     out: ../pkg/genproto
     opt: paths=source_relative
+  - local: protoc-gen-grpc-gateway
+    out: ../pkg/genproto
+    opt:
+      - paths=source_relative
+      - generate_unbound_methods=false

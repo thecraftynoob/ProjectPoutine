@@ -37,19 +37,27 @@
 #
 # CONSUMED BY: every service in this repo except tenant-identity itself
 # (which verifies its own tokens using the in-process private key it
-# already holds -- see services/tenant-identity/cmd/main.go) and
-# api-gateway (which does not run pkg/tenantctx's interceptor at all,
-# since it is the edge that ORIGINATES tenant context from a validated
-# JWT rather than validating one from an internal caller -- see
-# architecture doc Section 1.1 Layer 1 vs Layer 2). Every other service's
-# deployment.yaml mounts this ConfigMap as a file (see each service's
-# deployment.yaml's `tenant-identity-public-key` volume/volumeMount) at
-# /etc/ccaas/jwt/public_key.pem, read at startup via
-# pkg/jwtauth.LoadVerifierFromFile and passed to
-# pkg/tenantctx.UnaryServerInterceptor/StreamServerInterceptor. A service
-# that cannot load a valid key refuses to start (fail closed on a
-# security control) rather than silently accepting unauthenticated
-# traffic.
+# already holds -- see services/tenant-identity/cmd/main.go). Every other
+# service's deployment.yaml mounts this ConfigMap as a file (see each
+# service's deployment.yaml's `tenant-identity-public-key` volume/
+# volumeMount) at /etc/ccaas/jwt/public_key.pem, read at startup via
+# pkg/jwtauth.LoadVerifierFromFile. Internal services (Task Router, Agent
+# Presence, ...) pass it to
+# pkg/tenantctx.UnaryServerInterceptor/StreamServerInterceptor for gRPC
+# calls; API Gateway (services/api-gateway) passes it to its own
+# services/api-gateway/internal/gwauth.Middleware, which validates
+# end-user SESSION bearer tokens on every non-exempt REST request BEFORE
+# translating it to an internal gRPC call (Layer 1 enforcement,
+# architecture doc Section 1.1) -- the token is then forwarded unmodified
+# to whichever backend service handles it, which re-verifies it
+# independently via pkg/tenantctx (Layer 2). A service that cannot load a
+# valid key refuses to start (fail closed on a security control) rather
+# than silently accepting unauthenticated traffic.
+#
+# NOTE: this is Tenant & Identity's SESSION-token signing key. API Gateway
+# also generates and distributes a SEPARATE, dedicated key for short-lived
+# WebSocket tickets -- see api-gateway-ws-ticket-public-key.example.yaml --
+# do not confuse the two; they are deliberately different trust roots.
 #
 # Key rotation is out of scope for this milestone (see
 # migrations/003_signing_keypair.sql): replacing this ConfigMap's value
