@@ -3,20 +3,19 @@
 Multi-tenant Contact Center as a Service platform. Go microservices, gRPC
 contracts, NATS JetStream event bus, PostgreSQL, Redis.
 
-**Design source of truth:** read these two documents before changing
-anything structural.
+**Design source of truth:** read these documents before changing anything
+structural.
 
 - [`CCAAS_ENTERPRISE_ARCHITECTURE.md`](./CCAAS_ENTERPRISE_ARCHITECTURE.md) — service topology, multi-tenancy model, data/IPC architecture, naming conventions.
-- [`TASK_ROUTER_SPECIFICATION.md`](./TASK_ROUTER_SPECIFICATION.md) — the Task Router's full domain spec (routing algorithm, state machines, event catalog). Not yet implemented as of this scaffold.
+- [`TASK_ROUTER_SPECIFICATION.md`](./TASK_ROUTER_SPECIFICATION.md) — the Task Router's full domain spec (routing algorithm, state machines, event catalog). Implemented — see `services/task-router`.
+- [`PROGRESS.md`](./PROGRESS.md) — running status and to-do list. **Read this first** for what's actually built, deployed, and next.
 
 ## Status
 
-Repo layout, shared libraries, and proto contracts for `presence.v1` and
-`taskrouter.v1` are in place. **Task Router** has a full production domain
-implementation per `TASK_ROUTER_SPECIFICATION.md` sections 1-6 (Redis-backed
-hot-path matching, Postgres-backed config registries, NATS event
-publishing). The other 7 services are still skeletons that build, start,
-and respond to gRPC health checks, with no domain logic yet.
+See [`PROGRESS.md`](./PROGRESS.md) for the full, current picture. Short
+version: **Task Router**, **Agent & Presence Service**, and **Tenant &
+Identity Management** have real domain logic; the other 6 services are
+still skeletons that build, start, and respond to gRPC health checks.
 
 All 9 services build into container images and deploy to the `ccaas-dev`
 namespace on Docker Desktop's local Kubernetes — see "Running on
